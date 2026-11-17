@@ -70,7 +70,9 @@ Deribit / CME ────────────→│  normalizer  │
 - динамический запуск и остановка коннекторов по подпискам клиентов;
 - `Liquidations` переведён на Hub с сохранением прямого Binance fallback;
 - OI history warm-up из screener API (`/api/instruments/.../open-interest`);
-- `oiHistory` по WebSocket для OiFlow.
+- `oiHistory` по WebSocket для OiFlow;
+- durable JSONL-хранилище OI-точек и final feature-баров;
+- слияние screener-истории с локальной историей при старте.
 
 Ещё не реализовано:
 

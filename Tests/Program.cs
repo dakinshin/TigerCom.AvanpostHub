@@ -25,6 +25,7 @@ internal static class Program
         TestRequestContract();
         TestSettingsSanitize();
         TestSettingsStore();
+        TestHubStorage();
         TestBinanceInstrument();
         TestBinanceJson();
         TestBinanceAggregator();
@@ -135,6 +136,36 @@ internal static class Program
         {
             try { File.Delete(path); } catch { }
             try { File.Delete(path + ".tmp"); } catch { }
+        }
+    }
+
+    private static void TestHubStorage()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "avanposthub-storage-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var first = new HubStorage(root);
+            first.AppendOi("BINANCE:BTCUSDT:PERP", "1m", new[]
+            {
+                new StoredOiPoint { T = 1000, Oi = 100, Source = "SCREENER", GranularityMin = 5 },
+                new StoredOiPoint { T = 2000, Oi = 110, Source = "SCREENER", GranularityMin = 5 },
+            });
+            first.AppendOi("BINANCE:BTCUSDT:PERP", "1m", new[]
+            {
+                new StoredOiPoint { T = 2000, Oi = 111, Source = "SCREENER", GranularityMin = 5 },
+            });
+            first.AppendFeature(Snapshot(3000, 0.3, true));
+
+            var second = new HubStorage(root);
+            var oi = second.LoadOi("BINANCE:BTCUSDT:PERP", "1m", 0, long.MaxValue, 10);
+            Check(oi.Count == 2 && oi[1].Oi == 111, "HubStorage сохраняет и дедуплицирует OI");
+            var features = second.LoadFeatures("BINANCE:BTCUSDT:PERP", "1m", 0, long.MaxValue, 10);
+            Check(features.Count == 1 && features[0].BarOpenMs == 3000, "HubStorage сохраняет final features");
+            second.Dispose();
+        }
+        finally
+        {
+            try { Directory.Delete(root, true); } catch { }
         }
     }
 

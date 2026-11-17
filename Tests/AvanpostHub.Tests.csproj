@@ -17,6 +17,7 @@
     <Compile Include="../HubVersion.cs" />
     <Compile Include="../LoopbackServer.cs" />
     <Compile Include="../ScreenerOiHistoryClient.cs" />
+    <Compile Include="../HubStorage.cs" />
     <Compile Include="../HubRuntime.cs" />
     <Compile Include="../MarketData/IMarketDataConnector.cs" />
     <Compile Include="../MarketData/BinanceModels.cs" />

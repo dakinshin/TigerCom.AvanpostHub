@@ -143,6 +143,8 @@ namespace AvanpostHub
         public int Subscriptions { get; set; }
         public int FeatureSeries { get; set; }
         public int FeatureBars { get; set; }
+        public int StoredOiPoints { get; set; }
+        public int StoredFeatureBars { get; set; }
         public int Connectors { get; set; }
         public string LastError { get; set; }
     }

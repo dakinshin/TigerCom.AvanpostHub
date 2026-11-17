@@ -28,6 +28,7 @@ v0.3 — Binance Spot + USD-M + OI history:
 - raw-поток `liq.events.v1` для индикатора `Liquidations`;
 - OI history warm-up из screener API (`https://avanpost.io` по умолчанию);
 - WS-команда `oiHistory` для OiFlow;
+- durable JSONL-хранилище OI-точек и final feature-баров;
 - on-demand запуск коннекторов по подписке индикатора;
 - автоматический stop коннекторов при отписке последнего клиента;
 - тесты ядра, парсеров и локального транспорта.
@@ -145,7 +146,12 @@ ws://127.0.0.1:7830/ws
 ```text
 %LOCALAPPDATA%\AvanpostHub\settings.json
 %LOCALAPPDATA%\AvanpostHub\logs\avanpost-hub.log
+%LOCALAPPDATA%\AvanpostHub\data\oi\*.jsonl
+%LOCALAPPDATA%\AvanpostHub\data\features\*.jsonl
 ```
+
+При запросе `oiHistory` Hub объединяет screener-ответ с уже сохранённой
+локальной историей. Если screener недоступен, отдаёт локальные точки.
 
 ## Тесты
 

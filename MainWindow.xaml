@@ -71,6 +71,7 @@
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
                 <TextBlock Grid.Row="0" Grid.Column="0" Text="Сервер"/>
@@ -85,13 +86,17 @@
 
                 <TextBlock Grid.Row="3" Grid.Column="0" Margin="0,8,0,0" Text="Uptime"/>
                 <TextBlock Grid.Row="3" Grid.Column="1" x:Name="UptimeText" Margin="0,8,0,0" Text="—"/>
+
+                <TextBlock Grid.Row="4" Grid.Column="0" Margin="0,8,0,0" Text="Хранилище"/>
+                <TextBlock Grid.Row="4" Grid.Column="1" x:Name="StorageText" Margin="0,8,0,0"
+                           Text="0 OI-точек · 0 final-баров"/>
             </Grid>
         </GroupBox>
 
         <Border Grid.Row="3" Background="#FFF7E8" BorderBrush="#F0D39A" BorderThickness="1"
                 CornerRadius="4" Padding="12" VerticalAlignment="Top">
             <TextBlock x:Name="ErrorText" Foreground="#8A5A00" TextWrapping="Wrap"
-                       Text="Подключите биржевые коннекторы: пока хаб принимает транспорт и хранит признаки, но рыночных источников ещё нет."/>
+                       Text="Хаб слушает 127.0.0.1. История OI загружается из screener API."/>
         </Border>
 
         <Grid Grid.Row="4" Margin="0,16,0,0">

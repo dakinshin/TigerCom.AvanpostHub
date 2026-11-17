@@ -11,9 +11,11 @@ namespace AvanpostHub
         public HubRuntime()
         {
             Features = new FeatureStore();
+            Storage = new HubStorage();
             ScreenerHistory = new ScreenerOiHistoryClient();
-            Server = new LoopbackServer(Features, ScreenerHistory);
+            Server = new LoopbackServer(Features, ScreenerHistory, Storage);
             MarketData = new MarketDataCoordinator(Features);
+            Features.SnapshotPublished += OnSnapshotPublished;
             Server.SubscriptionActivated += MarketData.Activate;
             Server.SubscriptionDeactivated += MarketData.Deactivate;
             Server.LiquidationSubscriptionActivated += MarketData.ActivateLiquidations;
@@ -22,6 +24,7 @@ namespace AvanpostHub
         }
 
         public FeatureStore Features { get; }
+        public HubStorage Storage { get; }
         public ScreenerOiHistoryClient ScreenerHistory { get; }
         public LoopbackServer Server { get; }
         public MarketDataCoordinator MarketData { get; }
@@ -51,6 +54,8 @@ namespace AvanpostHub
             var status = Server.GetStatus();
             status.FeatureSeries = Features.SeriesCount;
             status.FeatureBars = Features.HistoryCount;
+            status.StoredOiPoints = Storage.LoadedOiPoints;
+            status.StoredFeatureBars = Storage.LoadedFeatureBars;
             status.Connectors = MarketData.ConnectorCount;
             status.LastError = string.IsNullOrWhiteSpace(_lastError) ? status.LastError : _lastError;
             return status;
@@ -61,11 +66,18 @@ namespace AvanpostHub
             Server.Stop();
         }
 
+        private void OnSnapshotPublished(FeatureSnapshot snapshot)
+        {
+            if (snapshot != null && snapshot.Final) Storage.AppendFeature(snapshot);
+        }
+
         public void Dispose()
         {
+            Features.SnapshotPublished -= OnSnapshotPublished;
             Server.Dispose();
             MarketData.Dispose();
             ScreenerHistory.Dispose();
+            Storage.Dispose();
         }
     }
 }

@@ -55,6 +55,8 @@ namespace AvanpostHub
             UptimeText.Text = status.UptimeMs <= 0
                 ? "—"
                 : TimeSpan.FromMilliseconds(status.UptimeMs).ToString(@"hh\:mm\:ss");
+            StorageText.Text = status.StoredOiPoints + " OI-точек · " +
+                               status.StoredFeatureBars + " final-баров";
             ErrorText.Text = string.IsNullOrWhiteSpace(status.LastError)
                 ? "Хаб слушает 127.0.0.1. Binance Spot/USD-M подключается по подписке индикатора."
                 : status.LastError;

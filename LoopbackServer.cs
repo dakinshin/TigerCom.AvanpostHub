@@ -43,6 +43,7 @@ namespace AvanpostHub
 
         private readonly FeatureStore _features;
         private readonly ScreenerOiHistoryClient _screenerHistory;
+        private readonly HubStorage _storage;
         private readonly object _gate = new object();
         private readonly ConcurrentDictionary<long, ClientSession> _clients =
             new ConcurrentDictionary<long, ClientSession>();
@@ -61,10 +62,11 @@ namespace AvanpostHub
         private volatile string _lastError = "";
         private int _port;
 
-        public LoopbackServer(FeatureStore features, ScreenerOiHistoryClient screenerHistory = null)
+        public LoopbackServer(FeatureStore features, ScreenerOiHistoryClient screenerHistory = null, HubStorage storage = null)
         {
             _features = features ?? throw new ArgumentNullException(nameof(features));
             _screenerHistory = screenerHistory;
+            _storage = storage;
         }
 
         public event Action StatusChanged;
@@ -483,8 +485,10 @@ namespace AvanpostHub
 
                 try
                 {
-                    var message = _screenerHistory.Fetch(instrument, timeframe, request.Limit ?? 500);
-                    session.SendText(HubJson.Serialize(message));
+                    var limit = request.Limit ?? 500;
+                    var message = _screenerHistory.Fetch(instrument, timeframe, limit);
+                    var merged = MergeOiHistory(instrument, timeframe, message, limit);
+                    session.SendText(HubJson.Serialize(merged));
                 }
                 catch (Exception ex)
                 {
@@ -520,6 +524,66 @@ namespace AvanpostHub
             }
 
             SendError(session, "unknown type: " + type);
+        }
+
+        private OiHistoryMessage MergeOiHistory(string instrument, string timeframe, OiHistoryMessage fresh, int limit)
+        {
+            var all = new Dictionary<long, OiHistoryPoint>();
+            if (_storage != null)
+            {
+                foreach (var point in _storage.LoadOi(instrument, timeframe, 0, long.MaxValue, 5000))
+                    all[point.T] = new OiHistoryPoint { T = point.T, Oi = point.Oi };
+            }
+            if (fresh != null && fresh.Points != null)
+            {
+                foreach (var point in fresh.Points)
+                    all[point.T] = new OiHistoryPoint { T = point.T, Oi = point.Oi };
+            }
+
+            var merged = new OiHistoryMessage
+            {
+                Instrument = instrument,
+                Timeframe = timeframe,
+                Period = fresh == null ? "" : fresh.Period,
+                MinutePoints = fresh == null ? 0 : fresh.MinutePoints,
+                Live = fresh == null ? null : fresh.Live,
+                NextEndMs = fresh == null ? null : fresh.NextEndMs,
+                FetchedAtMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                Source = fresh != null && fresh.Points != null && fresh.Points.Count > 0 ? "SCREENER+HUB" : "HUB",
+                Points = all.Values.OrderBy(x => x.T).ToList(),
+            };
+            if (merged.Points.Count > limit)
+                merged.Points = merged.Points.Skip(merged.Points.Count - limit).ToList();
+            merged.Available = merged.Points.Count > 0;
+
+            if (_storage != null && fresh != null && fresh.Points != null && fresh.Points.Count > 0)
+            {
+                var granularity = PeriodMinutes(fresh.Period);
+                _storage.AppendOi(instrument, timeframe, fresh.Points.Select(x => new StoredOiPoint
+                {
+                    T = x.T,
+                    Oi = x.Oi,
+                    Source = "SCREENER",
+                    GranularityMin = granularity,
+                }));
+            }
+
+            return merged;
+        }
+
+        private static int PeriodMinutes(string period)
+        {
+            var value = (period ?? "").Trim().ToLowerInvariant();
+            if (value.Length < 2) return 0;
+            int amount;
+            if (!int.TryParse(value.Substring(0, value.Length - 1), out amount) || amount <= 0) return 0;
+            switch (value[value.Length - 1])
+            {
+                case 'm': return amount;
+                case 'h': return amount * 60;
+                case 'd': return amount * 1440;
+                default: return 0;
+            }
         }
 
         public void PublishLiquidation(string instrument, MarketData.BinanceLiquidation liquidation)
