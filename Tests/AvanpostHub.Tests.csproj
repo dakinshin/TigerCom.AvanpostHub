@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Проверка ядра хаба без WPF и без Windows.
+       Запуск: dotnet run (из этой папки). -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../Contracts.cs" />
+    <Compile Include="../FeatureStore.cs" />
+    <Compile Include="../HubJson.cs" />
+    <Compile Include="../HubSettings.cs" />
+    <Compile Include="../HubLog.cs" />
+    <Compile Include="../LoopbackServer.cs" />
+    <Compile Include="Program.cs" />
+  </ItemGroup>
+</Project>

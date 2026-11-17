@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <AssemblyName>AvanpostHub</AssemblyName>
+    <RootNamespace>AvanpostHub</RootNamespace>
+    <Nullable>disable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AssemblyTitle>Avanpost Hub</AssemblyTitle>
+    <Product>Avanpost</Product>
+    <Description>Локальный хаб рыночных данных и overlay-разметки для индикаторов Tiger.com</Description>
+  </PropertyGroup>
+</Project>
