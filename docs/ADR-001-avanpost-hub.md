@@ -56,6 +56,28 @@ Deribit / CME ────────────→│  normalizer  │
                            └──────────────┘
 ```
 
+## 2.1. Статус реализации v0.2
+
+Реализовано:
+
+- tray-приложение, single-instance, настройки и HKCU-автозапуск;
+- localhost HTTP/WebSocket и FeatureStore;
+- Binance Spot `aggTrade` и Spot CVD;
+- Binance USD-M `aggTrade`, mark/index/funding, basis;
+- Binance USD-M OI через REST-опрос;
+- Binance USD-M `forceOrder` liquidations;
+- raw-поток `liq.events.v1`;
+- динамический запуск и остановка коннекторов по подпискам клиентов;
+- `Liquidations` переведён на Hub с сохранением прямого Binance fallback.
+
+Ещё не реализовано:
+
+- исторический backfill;
+- Bybit/OKX/агрегация OI;
+- L2/OFI;
+- overlay-протокол AvanpostSync;
+- перевод `OiFlow` на Hub.
+
 ## 3. Границы
 
 ### Входит в Avanpost Hub

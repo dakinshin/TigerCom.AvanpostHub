@@ -38,11 +38,18 @@ namespace AvanpostHub
         private const int MaxRequestBytes = 64 * 1024;
         private const int MaxFrameBytes = 1024 * 1024;
         private const string WebSocketGuid = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
+        private const string LiquidationFeature = "liq.events.v1";
+        private const string LiquidationTimeframe = "liq.events";
 
         private readonly FeatureStore _features;
         private readonly object _gate = new object();
         private readonly ConcurrentDictionary<long, ClientSession> _clients =
             new ConcurrentDictionary<long, ClientSession>();
+        private readonly object _subscriptionGate = new object();
+        private readonly Dictionary<string, int> _subscriptionRefs =
+            new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, int> _liquidationRefs =
+            new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
         private TcpListener _listener;
         private Thread _acceptThread;
@@ -59,6 +66,10 @@ namespace AvanpostHub
         }
 
         public event Action StatusChanged;
+        public event Action<string, string> SubscriptionActivated;
+        public event Action<string, string> SubscriptionDeactivated;
+        public event Action<string> LiquidationSubscriptionActivated;
+        public event Action<string> LiquidationSubscriptionDeactivated;
 
         public int Port => Volatile.Read(ref _port);
         public bool IsRunning => _running;
@@ -130,11 +141,11 @@ namespace AvanpostHub
                 State = _running ? "running" : "stopped",
                 Port = Port,
                 Endpoint = "ws://127.0.0.1:" + Port + "/ws",
-                Version = "0.1.0",
+                Version = HubVersion.Current,
                 StartedAtMs = started,
                 UptimeMs = started <= 0 ? 0 : Math.Max(0, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - started),
                 Clients = _clients.Count,
-                Subscriptions = _clients.Values.Sum(x => x.SubscriptionCount),
+                Subscriptions = SubscriptionRefCount + LiquidationRefCount,
                 FeatureSeries = _features.SeriesCount,
                 FeatureBars = _features.HistoryCount,
                 Connectors = 0,
@@ -145,6 +156,16 @@ namespace AvanpostHub
         public void Dispose()
         {
             Stop();
+        }
+
+        private int SubscriptionRefCount
+        {
+            get { lock (_subscriptionGate) return _subscriptionRefs.Count; }
+        }
+
+        private int LiquidationRefCount
+        {
+            get { lock (_subscriptionGate) return _liquidationRefs.Count; }
         }
 
         private void AcceptLoop()
@@ -233,7 +254,7 @@ namespace AvanpostHub
                     {
                         status = "ok",
                         name = "AvanpostHub",
-                        version = "0.1.0",
+                        version = HubVersion.Current,
                         uptimeMs = GetStatus().UptimeMs,
                     }));
                 return;
@@ -314,7 +335,7 @@ namespace AvanpostHub
             {
                 type = "hello",
                 protocol = 1,
-                version = "0.1.0",
+                version = HubVersion.Current,
                 hub = "AvanpostHub",
                 featureSets = new[] { "oi.v1", "spot.v1", "liq.v1", "context.v1" },
             }));
@@ -391,7 +412,22 @@ namespace AvanpostHub
                     return;
                 }
 
-                session.AddSubscription(FeatureStore.Key(instrument, timeframe));
+                var feature = (request.Feature ?? "").Trim();
+                if (string.Equals(feature, LiquidationFeature, StringComparison.OrdinalIgnoreCase))
+                {
+                    var liquidationKey = FeatureStore.Key(instrument, LiquidationTimeframe);
+                    if (session.AddSubscription(liquidationKey)) AddLiquidationRef(instrument);
+                    session.SendText(HubJson.Serialize(new
+                    {
+                        type = "subscribed",
+                        instrument,
+                        feature = LiquidationFeature,
+                    }));
+                    return;
+                }
+
+                var key = FeatureStore.Key(instrument, timeframe);
+                if (session.AddSubscription(key)) AddSubscriptionRef(key);
                 session.SendText(HubJson.Serialize(new
                 {
                     type = "subscribed",
@@ -408,7 +444,22 @@ namespace AvanpostHub
             {
                 var instrument = Normalize(request.Instrument);
                 var timeframe = NormalizeTimeframe(request.Timeframe);
-                session.RemoveSubscription(FeatureStore.Key(instrument, timeframe));
+                var feature = (request.Feature ?? "").Trim();
+                if (string.Equals(feature, LiquidationFeature, StringComparison.OrdinalIgnoreCase))
+                {
+                    var liquidationKey = FeatureStore.Key(instrument, LiquidationTimeframe);
+                    if (session.RemoveSubscription(liquidationKey)) RemoveLiquidationRef(instrument);
+                    session.SendText(HubJson.Serialize(new
+                    {
+                        type = "unsubscribed",
+                        instrument,
+                        feature = LiquidationFeature,
+                    }));
+                    return;
+                }
+
+                var key = FeatureStore.Key(instrument, timeframe);
+                if (session.RemoveSubscription(key)) RemoveSubscriptionRef(key);
                 session.SendText(HubJson.Serialize(new { type = "unsubscribed", instrument, timeframe }));
                 return;
             }
@@ -442,6 +493,28 @@ namespace AvanpostHub
             SendError(session, "unknown type: " + type);
         }
 
+        public void PublishLiquidation(string instrument, MarketData.BinanceLiquidation liquidation)
+        {
+            var normalized = Normalize(instrument);
+            var key = FeatureStore.Key(normalized, LiquidationTimeframe);
+            var message = new LiquidationMessage
+            {
+                Instrument = normalized,
+                TimeMs = liquidation.TimeMs,
+                IsLong = liquidation.IsLong,
+                Price = liquidation.Price,
+                Quantity = liquidation.Quantity,
+                Notional = liquidation.Notional,
+                Source = "BINANCE",
+            };
+            var json = HubJson.Serialize(message);
+            foreach (var client in _clients.Values)
+            {
+                if (!client.HasSubscription(key)) continue;
+                if (!client.SendText(json)) RemoveClient(client);
+            }
+        }
+
         private void OnSnapshotPublished(FeatureSnapshot snapshot)
         {
             if (snapshot == null) return;
@@ -465,8 +538,118 @@ namespace AvanpostHub
             if (session == null) return;
             ClientSession ignored;
             _clients.TryRemove(session.Id, out ignored);
+            var keys = session.ClearSubscriptions();
+            foreach (var key in keys)
+            {
+                var split = key.LastIndexOf('|');
+                if (split > 0 && split < key.Length - 1 &&
+                    string.Equals(key.Substring(split + 1), LiquidationTimeframe, StringComparison.OrdinalIgnoreCase))
+                    RemoveLiquidationRef(key.Substring(0, split));
+                else
+                    RemoveSubscriptionRef(key);
+            }
             session.Dispose();
             if (_running) NotifyStatus();
+        }
+
+        private void AddSubscriptionRef(string key)
+        {
+            var activate = false;
+            lock (_subscriptionGate)
+            {
+                int count;
+                _subscriptionRefs.TryGetValue(key, out count);
+                _subscriptionRefs[key] = count + 1;
+                activate = count == 0;
+            }
+
+            if (activate) RaiseSubscriptionEvent(key, true);
+        }
+
+        private void RemoveSubscriptionRef(string key)
+        {
+            var deactivate = false;
+            lock (_subscriptionGate)
+            {
+                int count;
+                if (!_subscriptionRefs.TryGetValue(key, out count)) return;
+                if (count <= 1)
+                {
+                    _subscriptionRefs.Remove(key);
+                    deactivate = true;
+                }
+                else
+                {
+                    _subscriptionRefs[key] = count - 1;
+                }
+            }
+
+            if (deactivate) RaiseSubscriptionEvent(key, false);
+        }
+
+        private void AddLiquidationRef(string instrument)
+        {
+            var activate = false;
+            lock (_subscriptionGate)
+            {
+                int count;
+                _liquidationRefs.TryGetValue(instrument, out count);
+                _liquidationRefs[instrument] = count + 1;
+                activate = count == 0;
+            }
+
+            if (activate) RaiseLiquidationSubscriptionEvent(instrument, true);
+        }
+
+        private void RemoveLiquidationRef(string instrument)
+        {
+            var deactivate = false;
+            lock (_subscriptionGate)
+            {
+                int count;
+                if (!_liquidationRefs.TryGetValue(instrument, out count)) return;
+                if (count <= 1)
+                {
+                    _liquidationRefs.Remove(instrument);
+                    deactivate = true;
+                }
+                else
+                {
+                    _liquidationRefs[instrument] = count - 1;
+                }
+            }
+
+            if (deactivate) RaiseLiquidationSubscriptionEvent(instrument, false);
+        }
+
+        private void RaiseLiquidationSubscriptionEvent(string instrument, bool activated)
+        {
+            try
+            {
+                if (activated) LiquidationSubscriptionActivated?.Invoke(instrument);
+                else LiquidationSubscriptionDeactivated?.Invoke(instrument);
+            }
+            catch (Exception ex)
+            {
+                HubLog.Warn("liquidation subscription callback failed: " + ex.Message);
+            }
+        }
+
+        private void RaiseSubscriptionEvent(string key, bool activated)
+        {
+            var split = key.LastIndexOf('|');
+            if (split <= 0 || split >= key.Length - 1) return;
+            var instrument = key.Substring(0, split);
+            var timeframe = key.Substring(split + 1);
+            try
+            {
+                if (activated) SubscriptionActivated?.Invoke(instrument, timeframe);
+                else SubscriptionDeactivated?.Invoke(instrument, timeframe);
+            }
+            catch (Exception ex)
+            {
+                HubLog.Warn("subscription callback failed: " + ex.Message);
+            }
         }
 
         private void NotifyStatus()
@@ -708,14 +891,26 @@ namespace AvanpostHub
                 get { lock (_subscriptionGate) return _subscriptions.Count; }
             }
 
-            public void AddSubscription(string key)
+            public bool AddSubscription(string key)
             {
-                lock (_subscriptionGate) _subscriptions.Add(key);
+                lock (_subscriptionGate) return _subscriptions.Add(key);
             }
 
-            public void RemoveSubscription(string key)
+            public bool RemoveSubscription(string key)
             {
-                lock (_subscriptionGate) _subscriptions.Remove(key);
+                lock (_subscriptionGate) return _subscriptions.Remove(key);
+            }
+
+            public string[] ClearSubscriptions()
+            {
+                lock (_subscriptionGate)
+                {
+                    if (_subscriptions.Count == 0) return new string[0];
+                    var keys = new string[_subscriptions.Count];
+                    _subscriptions.CopyTo(keys);
+                    _subscriptions.Clear();
+                    return keys;
+                }
             }
 
             public bool HasSubscription(string key)

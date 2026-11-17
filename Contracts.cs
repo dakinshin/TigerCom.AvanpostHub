@@ -44,17 +44,32 @@ namespace AvanpostHub
     public sealed class ContextFeatures
     {
         // Спот и перп.
+        public double? SpotCvd { get; set; }
+        public double? PerpCvd { get; set; }
         public double? SpotCvdZ { get; set; }
         public double? PerpCvdZ { get; set; }
         public double? SpotPerpDiv { get; set; }
         public double? SpotShare { get; set; }
+        public double? SpotDeltaShare { get; set; }
+        public double? PerpDeltaShare { get; set; }
+        public double? SpotVolume { get; set; }
+        public double? PerpVolume { get; set; }
+        public double? SpotPrice { get; set; }
+        public double? PerpPrice { get; set; }
 
         // Плечо и позиционирование.
         public double? BasisBps { get; set; }
+        public double? FundingRate { get; set; }
+        public double? FundingRatePct { get; set; }
         public double? FundingPct { get; set; }
         public double? FundingZ { get; set; }
         public double? OiBreadth { get; set; }
+        public double? OiBase { get; set; }
+        public double? OiUsd { get; set; }
+        public double? OiChangePct { get; set; }
         public double? GlobalOiDeltaPct { get; set; }
+        public double? MarkPrice { get; set; }
+        public double? IndexPrice { get; set; }
 
         // Принудительные закрытия.
         public double? LiqLongUsd { get; set; }
@@ -132,11 +147,24 @@ namespace AvanpostHub
         public string LastError { get; set; }
     }
 
+    public sealed class LiquidationMessage
+    {
+        public string Type { get; set; } = "liquidation";
+        public string Instrument { get; set; } = "";
+        public long TimeMs { get; set; }
+        public bool IsLong { get; set; }
+        public double Price { get; set; }
+        public double Quantity { get; set; }
+        public double Notional { get; set; }
+        public string Source { get; set; } = "BINANCE";
+    }
+
     public sealed class HubRequest
     {
         public string Type { get; set; }
         public string Instrument { get; set; }
         public string Timeframe { get; set; }
+        public string Feature { get; set; }
         public long? FromMs { get; set; }
         public long? ToMs { get; set; }
         public int? Limit { get; set; }

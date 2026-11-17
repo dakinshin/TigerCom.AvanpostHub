@@ -14,7 +14,17 @@
     <Compile Include="../HubJson.cs" />
     <Compile Include="../HubSettings.cs" />
     <Compile Include="../HubLog.cs" />
+    <Compile Include="../HubVersion.cs" />
     <Compile Include="../LoopbackServer.cs" />
+    <Compile Include="../HubRuntime.cs" />
+    <Compile Include="../MarketData/IMarketDataConnector.cs" />
+    <Compile Include="../MarketData/BinanceModels.cs" />
+    <Compile Include="../MarketData/BinanceJson.cs" />
+    <Compile Include="../MarketData/BinanceStreamLoop.cs" />
+    <Compile Include="../MarketData/BinanceSpotConnector.cs" />
+    <Compile Include="../MarketData/BinanceFuturesConnector.cs" />
+    <Compile Include="../MarketData/BinanceFeatureAggregator.cs" />
+    <Compile Include="../MarketData/MarketDataCoordinator.cs" />
     <Compile Include="Program.cs" />
   </ItemGroup>
 </Project>

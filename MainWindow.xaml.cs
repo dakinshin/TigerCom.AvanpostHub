@@ -49,12 +49,13 @@ namespace AvanpostHub
             StatusText.Foreground = running ? Brushes.SeaGreen : Brushes.IndianRed;
             EndpointText.Text = status.Endpoint;
             ClientsText.Text = status.Clients + " клиентов · " + status.Subscriptions + " подписок";
-            FeatureText.Text = status.FeatureSeries + " серий · " + status.FeatureBars + " закрытых баров";
+            FeatureText.Text = status.FeatureSeries + " серий · " + status.FeatureBars +
+                              " закрытых баров · " + status.Connectors + " коннекторов";
             UptimeText.Text = status.UptimeMs <= 0
                 ? "—"
                 : TimeSpan.FromMilliseconds(status.UptimeMs).ToString(@"hh\:mm\:ss");
             ErrorText.Text = string.IsNullOrWhiteSpace(status.LastError)
-                ? "Хаб слушает только 127.0.0.1. Коннекторы бирж будут добавлены следующим этапом."
+                ? "Хаб слушает 127.0.0.1. Binance Spot/USD-M подключается по подписке индикатора."
                 : status.LastError;
         }
 

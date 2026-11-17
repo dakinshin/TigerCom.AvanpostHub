@@ -12,20 +12,32 @@ Tiger -> индикатор -> ws://127.0.0.1:7830/ws -> AvanpostHub -> бирж
 
 ## Текущая версия
 
-v0.1 — каркас:
+v0.2 — Binance Spot + USD-M:
 
 - WPF-приложение с иконкой в трее;
 - single-instance;
 - окно настроек;
 - автозапуск через `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`;
-- локальный HTTP-сервер;
-- WebSocket `/ws`;
+- локальный HTTP-сервер и WebSocket `/ws`;
 - `FeatureStore` с live/latest и историей final-баров;
 - контракты `oi.v1`, `spot.v1`, `liq.v1`, `context.v1`;
-- тесты ядра без терминала.
+- Binance Spot: `aggTrade`, Spot CVD и spot/perp divergence;
+- Binance USD-M: `aggTrade`, mark/index price, funding, basis;
+- Binance USD-M: open interest через REST-опрос;
+- Binance USD-M: `forceOrder` liquidations;
+- raw-поток `liq.events.v1` для индикатора `Liquidations`;
+- on-demand запуск коннекторов по подписке индикатора;
+- автоматический stop коннекторов при отписке последнего клиента;
+- тесты ядра, парсеров и локального транспорта.
 
-Биржевые коннекторы ещё не включены. Это следующий этап: сначала Binance Spot + USD-M,
-затем `Liquidations` и `OiFlow` как первые потребители.
+### Ограничения v0.2
+
+- Пока только одна биржа: Binance.
+- Нет исторического backfill Binance Vision; история начинается с первого запуска Hub.
+- Funding percentile и spot/perp CVD z-score появляются после накопления 20 закрытых баров.
+- Binance `forceOrder` — неполный поток (не более одного события в секунду на символ).
+- Для OI используется USD-M REST `openInterest`, опрос раз в 5 секунд.
+- Bybit/OKX, L2-стакан и overlay-протокол ещё не подключены.
 
 ## Сборка
 
@@ -103,6 +115,18 @@ ws://127.0.0.1:7830/ws
 {"type":"unsubscribe","instrument":"BINANCE:BTCUSDT:PERP","timeframe":"1m"}
 ```
 
+Сырые ликвидации для `Liquidations`:
+
+```json
+{"type":"subscribe","instrument":"BINANCE:BTCUSDT:PERP","feature":"liq.events.v1"}
+```
+
+Ответ приходит отдельными сообщениями:
+
+```json
+{"type":"liquidation","instrument":"BINANCE:BTCUSDT:PERP","timeMs":1763446080000,"isLong":false,"price":100,"quantity":3,"notional":300,"source":"BINANCE"}
+```
+
 ## Где лежат файлы
 
 ```text
@@ -118,17 +142,36 @@ dotnet run
 ```
 
 Тесты проверяют FeatureStore, JSON-контракты, замену final-бара, live/final разделение,
-ограничение истории и санитизацию настроек.
+ограничение истории, настройки, Binance JSON-парсеры, feature aggregator и локальный
+HTTP/WebSocket-транспорт.
 
 ## Архитектурное решение
 
 См. [ADR-001](docs/ADR-001-avanpost-hub.md).
 
+## Как работает подписка
+
+Пока индикатор не подписан, биржевые соединения не открываются.
+
+```json
+{"type":"subscribe","instrument":"BINANCE:BTCUSDT:PERP","timeframe":"1m"}
+```
+
+Hub запускает для `BTCUSDT`:
+
+- Binance Spot `aggTrade`;
+- Binance USD-M `aggTrade`;
+- Binance USD-M `markPrice@1s`;
+- Binance USD-M `forceOrder`;
+- REST-опрос `openInterest` раз в 5 секунд.
+
+После последней отписки соединения останавливаются. Это позволяет держать Hub запущенным,
+не расходуя сеть и CPU на символы, которые сейчас никто не смотрит.
+
 ## Ближайшие шаги
 
-1. Добавить Binance Spot: trades/aggTrade, spot CVD, spot share.
-2. Добавить Binance USD-M: funding, basis, OI, liquidations.
-3. Перевести `Liquidations` на `liq.v1`.
-4. Добавить `FlowContext` и confidence в `OiFlow` / Shade.
-5. Добавить Bybit/OKX aggregate OI и funding dispersion.
-6. Перенести overlay-протокол из `AvanpostSync`.
+1. Перевести `OiFlow` на `context.v1` и добавить confidence-слой.
+2. Добавить Binance Vision backfill для истории.
+3. Добавить Bybit/OKX aggregate OI и funding dispersion.
+4. Добавить L2/OFI.
+5. Перенести overlay-протокол из `AvanpostSync`.

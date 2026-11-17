@@ -9,6 +9,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using AvanpostHub;
+using AvanpostHub.MarketData;
 
 internal static class Program
 {
@@ -24,6 +25,9 @@ internal static class Program
         TestRequestContract();
         TestSettingsSanitize();
         TestSettingsStore();
+        TestBinanceInstrument();
+        TestBinanceJson();
+        TestBinanceAggregator();
         TestLoopbackServer();
 
         Console.WriteLine(_failed == 0 ? "AvanpostHub tests: OK" : "AvanpostHub tests: FAILED " + _failed);
@@ -133,6 +137,91 @@ internal static class Program
         }
     }
 
+    private static void TestBinanceInstrument()
+    {
+        BinanceInstrument parsed;
+        Check(BinanceInstrument.TryParse("binance:btcusdt:perp", out parsed) &&
+              parsed.Symbol == "BTCUSDT" && parsed.Market == BinanceMarketType.Perpetual &&
+              parsed.Instrument == "BINANCE:BTCUSDT:PERP", "Binance instrument PERP");
+        Check(BinanceInstrument.TryParse("BINANCE:ETHUSDT:SPOT", out parsed) &&
+              parsed.Market == BinanceMarketType.Spot, "Binance instrument SPOT");
+        Check(!BinanceInstrument.TryParse("BYBIT:BTCUSDT:PERP", out parsed), "чужая биржа не парсится как Binance");
+    }
+
+    private static void TestBinanceJson()
+    {
+        BinanceTrade trade;
+        Check(BinanceJson.TryParseTrade(
+                  "{\"e\":\"aggTrade\",\"E\":1763446080123,\"s\":\"BTCUSDT\",\"p\":\"100.5\",\"q\":\"2\",\"T\":1763446080100,\"m\":false}",
+                  out trade) &&
+              trade.Symbol == "BTCUSDT" && trade.Price == 100.5 && trade.Quantity == 2 &&
+              !trade.BuyerIsMaker, "Binance aggTrade");
+
+        BinanceMarkPrice mark;
+        Check(BinanceJson.TryParseMarkPrice(
+                  "{\"e\":\"markPriceUpdate\",\"E\":1763446080123,\"s\":\"BTCUSDT\",\"p\":\"101\",\"i\":\"100.8\",\"r\":\"0.0001\",\"T\":1763472000000}",
+                  out mark) && mark.MarkPrice == 101 && mark.IndexPrice == 100.8 &&
+              Math.Abs(mark.FundingRate - 0.0001) < 1e-12, "Binance markPrice");
+
+        BinanceOpenInterest oi;
+        Check(BinanceJson.TryParseOpenInterest(
+                  "{\"openInterest\":\"12345.5\",\"symbol\":\"BTCUSDT\",\"time\":1763446080123}",
+                  out oi) && oi.OpenInterest == 12345.5, "Binance openInterest");
+
+        BinanceLiquidation liq;
+        Check(BinanceJson.TryParseLiquidation(
+                  "{\"e\":\"forceOrder\",\"E\":1763446080123,\"o\":{\"s\":\"BTCUSDT\",\"S\":\"SELL\",\"q\":\"2\",\"ap\":\"100\",\"p\":\"99\",\"T\":1763446080000}}",
+                  out liq) && liq.IsLong && liq.Notional == 200, "Binance liquidation");
+    }
+
+    private static void TestBinanceAggregator()
+    {
+        var store = new FeatureStore();
+        var aggregator = new BinanceFeatureAggregator(store, "BINANCE:BTCUSDT:PERP", "1m");
+        var start = 1763446080000L;
+
+        aggregator.OnSpotTrade(new BinanceTrade
+        {
+            Symbol = "BTCUSDT", TradeTimeMs = start + 1000, Price = 100, Quantity = 2, BuyerIsMaker = false,
+        });
+        aggregator.OnPerpTrade(new BinanceTrade
+        {
+            Symbol = "BTCUSDT", TradeTimeMs = start + 2000, Price = 101, Quantity = 1, BuyerIsMaker = true,
+        });
+        aggregator.OnMarkPrice(new BinanceMarkPrice
+        {
+            Symbol = "BTCUSDT", EventTimeMs = start + 3000, MarkPrice = 101, IndexPrice = 100.8, FundingRate = 0.0001,
+            NextFundingTimeMs = start + 8 * 60 * 60 * 1000,
+        });
+        aggregator.OnOpenInterest(new BinanceOpenInterest
+        {
+            Symbol = "BTCUSDT", TimeMs = start + 4000, OpenInterest = 1000,
+        });
+        aggregator.OnLiquidation(new BinanceLiquidation
+        {
+            Symbol = "BTCUSDT", TimeMs = start + 5000, IsLong = true, Price = 100, Quantity = 1,
+        });
+        aggregator.Flush();
+
+        var live = store.GetLatest("BINANCE:BTCUSDT:PERP", "1m");
+        Check(live != null && !live.Final && live.BarOpenMs == start, "aggregator live snapshot");
+        Check(live.Context.SpotCvd == 200 && live.Context.PerpCvd == -101, "aggregator CVD");
+        Check(Math.Abs(live.Context.BasisBps.Value - 100) < 1e-9, "aggregator basis");
+        Check(Math.Abs(live.Context.FundingRatePct.Value - 0.01) < 1e-9, "aggregator funding");
+        Check(live.Context.LiqLongUsd == 100 && live.Context.LiqImbalance == -1, "aggregator liquidations");
+        Check(live.Quality.FreshVenues == 1, "aggregator quality");
+
+        aggregator.OnSpotTrade(new BinanceTrade
+        {
+            Symbol = "BTCUSDT", TradeTimeMs = start + 60001, Price = 102, Quantity = 1, BuyerIsMaker = false,
+        });
+
+        var history = store.GetHistory("BINANCE:BTCUSDT:PERP", "1m");
+        Check(history.Count == 1 && history[0].Final && history[0].BarOpenMs == start,
+            "aggregator finalizes previous bar");
+        Check(history[0].Context.SpotDeltaShare == 1, "aggregator stores normalized spot flow");
+    }
+
     private static void TestLoopbackServer()
     {
         var port = FindFreePort();
@@ -170,6 +259,16 @@ internal static class Program
 
                 SendText(ws, "{\"type\":\"history\",\"instrument\":\"BINANCE:BTCUSDT:PERP\",\"timeframe\":\"1m\",\"limit\":10}");
                 Check(ReceiveText(ws).Contains("\"type\":\"history\"", StringComparison.Ordinal), "WS history");
+
+                SendText(ws, "{\"type\":\"subscribe\",\"instrument\":\"BINANCE:BTCUSDT:PERP\",\"feature\":\"liq.events.v1\"}");
+                Check(ReceiveText(ws).Contains("\"feature\":\"liq.events.v1\"", StringComparison.Ordinal), "WS liquidation subscribe");
+                server.PublishLiquidation("BINANCE:BTCUSDT:PERP", new BinanceLiquidation
+                {
+                    Symbol = "BTCUSDT", TimeMs = 6000, IsLong = false, Price = 100, Quantity = 3,
+                });
+                var liquidationMessage = ReceiveText(ws);
+                Check(liquidationMessage.Contains("\"type\":\"liquidation\"", StringComparison.Ordinal) &&
+                      liquidationMessage.Contains("\"notional\":300", StringComparison.Ordinal), "WS liquidation broadcast");
             }
             finally
             {

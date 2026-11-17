@@ -1,4 +1,5 @@
 using System;
+using AvanpostHub.MarketData;
 
 namespace AvanpostHub
 {
@@ -11,10 +12,17 @@ namespace AvanpostHub
         {
             Features = new FeatureStore();
             Server = new LoopbackServer(Features);
+            MarketData = new MarketDataCoordinator(Features);
+            Server.SubscriptionActivated += MarketData.Activate;
+            Server.SubscriptionDeactivated += MarketData.Deactivate;
+            Server.LiquidationSubscriptionActivated += MarketData.ActivateLiquidations;
+            Server.LiquidationSubscriptionDeactivated += MarketData.DeactivateLiquidations;
+            MarketData.LiquidationReceived += Server.PublishLiquidation;
         }
 
         public FeatureStore Features { get; }
         public LoopbackServer Server { get; }
+        public MarketDataCoordinator MarketData { get; }
         public HubSettings Settings => _settings;
 
         public string Restart(HubSettings settings)
@@ -40,7 +48,7 @@ namespace AvanpostHub
             var status = Server.GetStatus();
             status.FeatureSeries = Features.SeriesCount;
             status.FeatureBars = Features.HistoryCount;
-            status.Connectors = 0;
+            status.Connectors = MarketData.ConnectorCount;
             status.LastError = string.IsNullOrWhiteSpace(_lastError) ? status.LastError : _lastError;
             return status;
         }
@@ -53,6 +61,7 @@ namespace AvanpostHub
         public void Dispose()
         {
             Server.Dispose();
+            MarketData.Dispose();
         }
     }
 }
