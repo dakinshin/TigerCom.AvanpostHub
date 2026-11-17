@@ -14,4 +14,8 @@
     <Product>Avanpost</Product>
     <Description>Локальный хаб рыночных данных и overlay-разметки для индикаторов Tiger.com</Description>
   </PropertyGroup>
+  <ItemGroup>
+    <!-- Tests — отдельный проект. Иначе его Program.Main попадает в WinExe и даёт CS0017. -->
+    <Compile Remove="Tests/**/*.cs" />
+  </ItemGroup>
 </Project>
