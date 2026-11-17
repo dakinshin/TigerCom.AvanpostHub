@@ -35,6 +35,26 @@ v0.1 — каркас:
 dotnet build .\AvanpostHub\AvanpostHub.csproj -c Release
 ```
 
+Запускаемый файл после build:
+
+```text
+AvanpostHub\bin\Release\net10.0-windows\win-x64\AvanpostHub.exe
+```
+
+DLL рядом — это managed-сборка, а не ошибка: EXE является apphost и запускает её.
+
+Для одного самостоятельного EXE без установленного .NET Runtime:
+
+```powershell
+dotnet publish .\AvanpostHub\AvanpostHub.csproj -c Release -p:PublishProfile=win-x64
+```
+
+Результат:
+
+```text
+AvanpostHub\bin\Release\net10.0-windows\win-x64\publish\AvanpostHub.exe
+```
+
 Или открыть `AvanpostHub.csproj` в Visual Studio 2022/2026.
 
 ## Запуск
