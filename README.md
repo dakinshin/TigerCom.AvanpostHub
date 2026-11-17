@@ -12,7 +12,7 @@ Tiger -> индикатор -> ws://127.0.0.1:7830/ws -> AvanpostHub -> бирж
 
 ## Текущая версия
 
-v0.3 — Binance Spot + USD-M + OI history:
+v0.4 — Binance Spot + USD-M + OI history + calibration:
 
 - WPF-приложение с иконкой в трее;
 - single-instance;
@@ -29,6 +29,8 @@ v0.3 — Binance Spot + USD-M + OI history:
 - OI history warm-up из screener API (`https://avanpost.io` по умолчанию);
 - WS-команда `oiHistory` для OiFlow;
 - durable JSONL-хранилище OI-точек и final feature-баров;
+- кеш offline-профиля OiFlow calibration из screener API;
+- HTTP/WebSocket-раздача исторической confidence-оценки;
 - on-demand запуск коннекторов по подписке индикатора;
 - автоматический stop коннекторов при отписке последнего клиента;
 - тесты ядра, парсеров и локального транспорта.
@@ -106,6 +108,7 @@ GET http://127.0.0.1:7830/health
 GET http://127.0.0.1:7830/v1/status
 GET http://127.0.0.1:7830/v1/features/latest?instrument=BINANCE:BTCUSDT:PERP&timeframe=1m
 GET http://127.0.0.1:7830/v1/features/history?instrument=BINANCE:BTCUSDT:PERP&timeframe=1m&limit=500
+GET http://127.0.0.1:7830/v1/calibration/oi-flow
 ```
 
 WebSocket:
@@ -125,6 +128,7 @@ ws://127.0.0.1:7830/ws
 ```json
 {"type":"ping"}
 {"type":"status"}
+{"type":"oiCalibration"}
 {"type":"history","instrument":"BINANCE:BTCUSDT:PERP","timeframe":"1m","limit":500}
 {"type":"unsubscribe","instrument":"BINANCE:BTCUSDT:PERP","timeframe":"1m"}
 ```
@@ -148,10 +152,16 @@ ws://127.0.0.1:7830/ws
 %LOCALAPPDATA%\AvanpostHub\logs\avanpost-hub.log
 %LOCALAPPDATA%\AvanpostHub\data\oi\*.jsonl
 %LOCALAPPDATA%\AvanpostHub\data\features\*.jsonl
+%LOCALAPPDATA%\AvanpostHub\calibration\oi-flow.json
 ```
 
 При запросе `oiHistory` Hub объединяет screener-ответ с уже сохранённой
 локальной историей. Если screener недоступен, отдаёт локальные точки.
+
+При старте Hub пытается обновить `oi-flow.json` из
+`/api/indicator-calibration/oi-flow`. Профиль содержит только агрегированную
+статистику состояний по когортам; Hub её не пересчитывает. Если API временно
+недоступен, используется последний локальный файл.
 
 ## Тесты
 

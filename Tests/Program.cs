@@ -26,6 +26,7 @@ internal static class Program
         TestSettingsSanitize();
         TestSettingsStore();
         TestHubStorage();
+        TestOiFlowCalibration();
         TestBinanceInstrument();
         TestBinanceJson();
         TestBinanceAggregator();
@@ -169,6 +170,44 @@ internal static class Program
         }
     }
 
+    private static void TestOiFlowCalibration()
+    {
+        const string json = @"{
+          ""schema"":""avanpost.oi-flow-calibration.v1"",
+          ""generatedAt"":""2026-11-17T12:00:00+00:00"",
+          ""timeframe"":""15m"",
+          ""horizonBars"":15,
+          ""instrumentsByName"":{""BTCUSDT"":""heavy""},
+          ""cohorts"":{
+            ""heavy"":{""states"":{
+              ""NewLongs"":{""grade"":""B"",""reason"":""ok"",
+                ""development"":{""n"":200,""winRate"":0.54,""avgRetPct"":0.1},
+                ""confirmation"":{""n"":100,""winRate"":0.53,""avgRetPct"":0.05}}
+            }},
+            ""all"":{""states"":{
+              ""NewLongs"":{""grade"":""C"",""reason"":""all"",
+                ""development"":{""n"":500,""winRate"":0.5},
+                ""confirmation"":{""n"":300,""winRate"":0.5}}
+            }}
+          }
+        }";
+        var path = Path.Combine(Path.GetTempPath(), "avanpost-calibration-" + Guid.NewGuid().ToString("N") + ".json");
+        var store = new OiFlowCalibrationStore(path);
+        Check(!store.Available, "calibration отсутствует до загрузки");
+        Check(store.ReplaceFromJson(json), "calibration profile загружается и валидируется");
+        var profile = store.GetProfile();
+        Check(profile != null && profile.Timeframe == "15m" && profile.HorizonBars == 15,
+            "calibration profile сохраняет параметры");
+        Check(profile.CohortFor("BINANCE:BTCUSDT:PERP") == "heavy", "symbol → cohort");
+        Check(profile.Find("BINANCE:BTCUSDT:PERP", "NewLongs").Grade == "B",
+            "calibration lookup по cohort");
+        Check(profile.Find("BINANCE:SOLUSDT:PERP", "NewLongs").Grade == "C",
+            "calibration fallback all");
+        store.Reload();
+        Check(store.Available && File.Exists(path), "calibration перечитывается с диска");
+        try { File.Delete(path); } catch { }
+    }
+
     private static void TestBinanceInstrument()
     {
         BinanceInstrument parsed;
@@ -258,7 +297,14 @@ internal static class Program
     {
         var port = FindFreePort();
         var store = new FeatureStore();
-        using (var server = new LoopbackServer(store))
+        var calibrationPath = Path.Combine(Path.GetTempPath(),
+            "avanpost-loopback-calibration-" + Guid.NewGuid().ToString("N") + ".json");
+        var calibration = new OiFlowCalibrationStore(calibrationPath);
+        calibration.ReplaceFromJson(
+            "{\"schema\":\"avanpost.oi-flow-calibration.v1\",\"timeframe\":\"15m\"," +
+            "\"horizonBars\":5,\"cohorts\":{\"all\":{\"states\":{\"ClimaxLongs\":" +
+            "{\"grade\":\"B\",\"confirmation\":{\"n\":100,\"winRate\":0.55,\"avgRetPct\":0.1}}}}}}");
+        using (var server = new LoopbackServer(store, null, null, calibration))
         {
             server.Start(port);
             using (var http = new HttpClient())
@@ -268,6 +314,11 @@ internal static class Program
 
                 var status = http.GetStringAsync("http://127.0.0.1:" + port + "/v1/status").GetAwaiter().GetResult();
                 Check(status.Contains("\"state\":\"running\"", StringComparison.Ordinal), "HTTP /v1/status отдаёт running");
+
+                var profile = http.GetStringAsync("http://127.0.0.1:" + port + "/v1/calibration/oi-flow")
+                    .GetAwaiter().GetResult();
+                Check(profile.Contains("\"schema\":\"avanpost.oi-flow-calibration.v1\"", StringComparison.Ordinal),
+                    "HTTP /v1/calibration/oi-flow отдаёт профиль");
             }
 
             var ws = new ClientWebSocket();
@@ -276,6 +327,12 @@ internal static class Program
                 ws.ConnectAsync(new Uri("ws://127.0.0.1:" + port + "/ws"), CancellationToken.None).GetAwaiter().GetResult();
                 Check(ReceiveText(ws).Contains("\"type\":\"hello\"", StringComparison.Ordinal), "WS hello");
                 Check(ReceiveText(ws).Contains("\"type\":\"status\"", StringComparison.Ordinal), "WS status");
+
+                SendText(ws, "{\"type\":\"oiCalibration\"}");
+                var calibrationMessage = ReceiveText(ws);
+                Check(calibrationMessage.Contains("\"type\":\"oiCalibration\"", StringComparison.Ordinal) &&
+                      calibrationMessage.Contains("\"available\":true", StringComparison.Ordinal),
+                    "WS oiCalibration отдаёт профиль");
 
                 var subscribe = "{\"type\":\"subscribe\",\"instrument\":\"BINANCE:BTCUSDT:PERP\",\"timeframe\":\"1m\"}";
                 SendText(ws, subscribe);
@@ -307,6 +364,7 @@ internal static class Program
                 ws.Dispose();
             }
         }
+        try { File.Delete(calibrationPath); } catch { }
     }
 
     private static int FindFreePort()

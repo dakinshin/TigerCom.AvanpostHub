@@ -57,6 +57,10 @@ namespace AvanpostHub
                 : TimeSpan.FromMilliseconds(status.UptimeMs).ToString(@"hh\:mm\:ss");
             StorageText.Text = status.StoredOiPoints + " OI-точек · " +
                                status.StoredFeatureBars + " final-баров";
+            CalibrationText.Text = status.CalibrationAvailable
+                ? "OiFlow · " + DateTimeOffset.FromUnixTimeMilliseconds(status.CalibrationGeneratedAtMs)
+                    .ToLocalTime().ToString("yyyy-MM-dd HH:mm")
+                : "профиль OiFlow не загружен";
             ErrorText.Text = string.IsNullOrWhiteSpace(status.LastError)
                 ? "Хаб слушает 127.0.0.1. Binance Spot/USD-M подключается по подписке индикатора."
                 : status.LastError;

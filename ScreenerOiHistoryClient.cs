@@ -83,7 +83,7 @@ namespace AvanpostHub
             var message = new OiHistoryMessage
             {
                 Instrument = (instrument ?? "").Trim().ToUpperInvariant(),
-                Timeframe = (timeframe ?? "1m").Trim().ToLowerInvariant(),
+                Timeframe = NormalizeTimeframe(timeframe),
                 FetchedAtMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
             };
             if (limit < 2) limit = 2;
@@ -196,6 +196,33 @@ namespace AvanpostHub
                     if (oi > 0 && ts > 0)
                         message.Live = new OiHistoryLive { Oi = oi, TsMs = ts };
                 }
+            }
+        }
+
+        private static string NormalizeTimeframe(string timeframe)
+        {
+            var value = string.IsNullOrWhiteSpace(timeframe) ? "1m" : timeframe.Trim().ToLowerInvariant();
+            var minutes = TimeframeMinutes(value);
+            if (minutes >= 1440) return "1d";
+            if (minutes >= 240) return "4h";
+            if (minutes >= 60) return "1h";
+            if (minutes >= 15) return "15m";
+            if (minutes >= 5) return "5m";
+            return "1m";
+        }
+
+        private static int TimeframeMinutes(string value)
+        {
+            if (value.Length < 2) return 1;
+            int amount;
+            if (!int.TryParse(value.Substring(0, value.Length - 1), out amount) || amount <= 0) return 1;
+            switch (value[value.Length - 1])
+            {
+                case 'm': return amount;
+                case 'h': return amount * 60;
+                case 'd': return amount * 1440;
+                case 'w': return amount * 7 * 1440;
+                default: return 1;
             }
         }
 

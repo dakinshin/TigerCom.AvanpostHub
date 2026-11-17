@@ -40,6 +40,8 @@ namespace AvanpostHub
         public static string SettingsFile => Path.Combine(Root, "settings.json");
         public static string LogDirectory => Path.Combine(Root, "logs");
         public static string LogFile => Path.Combine(LogDirectory, "avanpost-hub.log");
+        public static string CalibrationDirectory => Path.Combine(Root, "calibration");
+        public static string CalibrationFile => Path.Combine(CalibrationDirectory, "oi-flow.json");
     }
 
     public sealed class SettingsStore

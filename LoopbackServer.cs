@@ -44,6 +44,7 @@ namespace AvanpostHub
         private readonly FeatureStore _features;
         private readonly ScreenerOiHistoryClient _screenerHistory;
         private readonly HubStorage _storage;
+        private readonly OiFlowCalibrationStore _calibration;
         private readonly object _gate = new object();
         private readonly ConcurrentDictionary<long, ClientSession> _clients =
             new ConcurrentDictionary<long, ClientSession>();
@@ -62,11 +63,14 @@ namespace AvanpostHub
         private volatile string _lastError = "";
         private int _port;
 
-        public LoopbackServer(FeatureStore features, ScreenerOiHistoryClient screenerHistory = null, HubStorage storage = null)
+        public LoopbackServer(FeatureStore features, ScreenerOiHistoryClient screenerHistory = null,
+            HubStorage storage = null, OiFlowCalibrationStore calibration = null)
         {
             _features = features ?? throw new ArgumentNullException(nameof(features));
             _screenerHistory = screenerHistory;
             _storage = storage;
+            _calibration = calibration;
+            if (_calibration != null) _calibration.Updated += OnCalibrationUpdated;
         }
 
         public event Action StatusChanged;
@@ -159,6 +163,7 @@ namespace AvanpostHub
 
         public void Dispose()
         {
+            if (_calibration != null) _calibration.Updated -= OnCalibrationUpdated;
             Stop();
         }
 
@@ -270,6 +275,19 @@ namespace AvanpostHub
                 return;
             }
 
+            if (path == "/v1/calibration/oi-flow")
+            {
+                var profile = _calibration == null ? null : _calibration.GetProfile();
+                if (profile == null)
+                {
+                    SendHttp(stream, 404, "application/json",
+                        HubJson.Serialize(new { type = "error", message = "calibration profile not found" }));
+                    return;
+                }
+                SendHttp(stream, 200, "application/json", HubJson.Serialize(profile));
+                return;
+            }
+
             if (path == "/v1/features/latest")
             {
                 var instrument = Get(query, "instrument");
@@ -341,7 +359,7 @@ namespace AvanpostHub
                 protocol = 1,
                 version = HubVersion.Current,
                 hub = "AvanpostHub",
-                featureSets = new[] { "oi.v1", "spot.v1", "liq.v1", "context.v1" },
+                featureSets = new[] { "oi.v1", "spot.v1", "liq.v1", "context.v1", "calibration.v1" },
             }));
             session.SendText(HubJson.Serialize(new { type = "status", status = GetStatus() }));
 
@@ -403,6 +421,28 @@ namespace AvanpostHub
             if (type == "status")
             {
                 session.SendText(HubJson.Serialize(new { type = "status", status = GetStatus() }));
+                return;
+            }
+
+            if (type == "oicalibration")
+            {
+                var profile = _calibration == null ? null : _calibration.GetProfile();
+                if (profile == null)
+                {
+                    session.SendText(HubJson.Serialize(new
+                    {
+                        type = "oiCalibration",
+                        available = false,
+                        error = _calibration == null ? "calibration store unavailable" : _calibration.LastError,
+                    }));
+                    return;
+                }
+                session.SendText(HubJson.Serialize(new
+                {
+                    type = "oiCalibration",
+                    available = true,
+                    profile,
+                }));
                 return;
             }
 
@@ -604,6 +644,21 @@ namespace AvanpostHub
             foreach (var client in _clients.Values)
             {
                 if (!client.HasSubscription(key)) continue;
+                if (!client.SendText(json)) RemoveClient(client);
+            }
+        }
+
+        private void OnCalibrationUpdated(OiFlowCalibrationProfile profile)
+        {
+            if (profile == null) return;
+            var json = HubJson.Serialize(new
+            {
+                type = "oiCalibration",
+                available = true,
+                profile,
+            });
+            foreach (var client in _clients.Values)
+            {
                 if (!client.SendText(json)) RemoveClient(client);
             }
         }

@@ -145,6 +145,8 @@ namespace AvanpostHub
         public int FeatureBars { get; set; }
         public int StoredOiPoints { get; set; }
         public int StoredFeatureBars { get; set; }
+        public bool CalibrationAvailable { get; set; }
+        public long CalibrationGeneratedAtMs { get; set; }
         public int Connectors { get; set; }
         public string LastError { get; set; }
     }

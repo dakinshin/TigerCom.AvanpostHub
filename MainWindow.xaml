@@ -72,6 +72,7 @@
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
                 <TextBlock Grid.Row="0" Grid.Column="0" Text="Сервер"/>
@@ -90,6 +91,10 @@
                 <TextBlock Grid.Row="4" Grid.Column="0" Margin="0,8,0,0" Text="Хранилище"/>
                 <TextBlock Grid.Row="4" Grid.Column="1" x:Name="StorageText" Margin="0,8,0,0"
                            Text="0 OI-точек · 0 final-баров"/>
+
+                <TextBlock Grid.Row="5" Grid.Column="0" Margin="0,8,0,0" Text="Калибровка"/>
+                <TextBlock Grid.Row="5" Grid.Column="1" x:Name="CalibrationText" Margin="0,8,0,0"
+                           Text="профиль OiFlow не загружен"/>
             </Grid>
         </GroupBox>
 
