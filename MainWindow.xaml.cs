@@ -29,6 +29,7 @@ namespace AvanpostHub
         {
             if (settings == null) return;
             PortBox.Text = settings.Port.ToString();
+            ScreenerUrlBox.Text = settings.ScreenerBaseUrl;
             AutostartCheck.IsChecked = settings.Autostart;
             StartMinimizedCheck.IsChecked = settings.StartMinimized;
         }
@@ -72,6 +73,7 @@ namespace AvanpostHub
             var next = new HubSettings
             {
                 Port = port,
+                ScreenerBaseUrl = ScreenerUrlBox.Text.Trim(),
                 Autostart = AutostartCheck.IsChecked == true,
                 StartMinimized = StartMinimizedCheck.IsChecked == true,
             };

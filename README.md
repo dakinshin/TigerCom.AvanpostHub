@@ -12,7 +12,7 @@ Tiger -> индикатор -> ws://127.0.0.1:7830/ws -> AvanpostHub -> бирж
 
 ## Текущая версия
 
-v0.2 — Binance Spot + USD-M:
+v0.3 — Binance Spot + USD-M + OI history:
 
 - WPF-приложение с иконкой в трее;
 - single-instance;
@@ -26,14 +26,16 @@ v0.2 — Binance Spot + USD-M:
 - Binance USD-M: open interest через REST-опрос;
 - Binance USD-M: `forceOrder` liquidations;
 - raw-поток `liq.events.v1` для индикатора `Liquidations`;
+- OI history warm-up из screener API (`https://avanpost.io` по умолчанию);
+- WS-команда `oiHistory` для OiFlow;
 - on-demand запуск коннекторов по подписке индикатора;
 - автоматический stop коннекторов при отписке последнего клиента;
 - тесты ядра, парсеров и локального транспорта.
 
 ### Ограничения v0.2
 
-- Пока только одна биржа: Binance.
-- Нет исторического backfill Binance Vision; история начинается с первого запуска Hub.
+- Live-коннекторы пока только Binance.
+- Историческая OI-история берётся из screener API; собственный backfill Binance Vision ещё не реализован.
 - Funding percentile и spot/perp CVD z-score появляются после накопления 20 закрытых баров.
 - Binance `forceOrder` — неполный поток (не более одного события в секунду на символ).
 - Для OI используется USD-M REST `openInterest`, опрос раз в 5 секунд.
@@ -68,6 +70,17 @@ AvanpostHub\bin\Release\net10.0-windows\win-x64\publish\AvanpostHub.exe
 ```
 
 Или открыть `AvanpostHub.csproj` в Visual Studio 2022/2026.
+
+## Настройки
+
+В окне Hub:
+
+- порт локального WebSocket — по умолчанию `7830`;
+- автозапуск при входе в Windows;
+- `Screener API` — по умолчанию `https://avanpost.io`.
+
+Hub использует screener только для истории OI (`open-interest`), live-данные
+остаются из Binance-коннекторов Hub.
 
 ## Запуск
 

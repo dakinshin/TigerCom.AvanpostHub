@@ -114,8 +114,9 @@ internal static class Program
 
     private static void TestSettingsSanitize()
     {
-        var settings = new HubSettings { Port = 0, Autostart = true, StartMinimized = false }.Sanitized();
+        var settings = new HubSettings { Port = 0, Autostart = true, StartMinimized = false, ScreenerBaseUrl = " https://avanpost.io/ " }.Sanitized();
         Check(settings.Port == 7830, "некорректный порт заменяется на 7830");
+        Check(settings.ScreenerBaseUrl == "https://avanpost.io", "Screener URL нормализуется");
         Check(settings.Autostart, "autostart сохраняется");
         Check(!settings.StartMinimized, "startMinimized сохраняется");
     }

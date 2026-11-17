@@ -11,7 +11,8 @@ namespace AvanpostHub
         public HubRuntime()
         {
             Features = new FeatureStore();
-            Server = new LoopbackServer(Features);
+            ScreenerHistory = new ScreenerOiHistoryClient();
+            Server = new LoopbackServer(Features, ScreenerHistory);
             MarketData = new MarketDataCoordinator(Features);
             Server.SubscriptionActivated += MarketData.Activate;
             Server.SubscriptionDeactivated += MarketData.Deactivate;
@@ -21,6 +22,7 @@ namespace AvanpostHub
         }
 
         public FeatureStore Features { get; }
+        public ScreenerOiHistoryClient ScreenerHistory { get; }
         public LoopbackServer Server { get; }
         public MarketDataCoordinator MarketData { get; }
         public HubSettings Settings => _settings;
@@ -28,6 +30,7 @@ namespace AvanpostHub
         public string Restart(HubSettings settings)
         {
             _settings = (settings ?? new HubSettings()).Sanitized();
+            ScreenerHistory.Configure(_settings.ScreenerBaseUrl);
             try
             {
                 Server.Stop();
@@ -62,6 +65,7 @@ namespace AvanpostHub
         {
             Server.Dispose();
             MarketData.Dispose();
+            ScreenerHistory.Dispose();
         }
     }
 }

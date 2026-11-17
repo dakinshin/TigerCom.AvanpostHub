@@ -42,6 +42,7 @@ namespace AvanpostHub
         private const string LiquidationTimeframe = "liq.events";
 
         private readonly FeatureStore _features;
+        private readonly ScreenerOiHistoryClient _screenerHistory;
         private readonly object _gate = new object();
         private readonly ConcurrentDictionary<long, ClientSession> _clients =
             new ConcurrentDictionary<long, ClientSession>();
@@ -60,9 +61,10 @@ namespace AvanpostHub
         private volatile string _lastError = "";
         private int _port;
 
-        public LoopbackServer(FeatureStore features)
+        public LoopbackServer(FeatureStore features, ScreenerOiHistoryClient screenerHistory = null)
         {
             _features = features ?? throw new ArgumentNullException(nameof(features));
+            _screenerHistory = screenerHistory;
         }
 
         public event Action StatusChanged;
@@ -461,6 +463,33 @@ namespace AvanpostHub
                 var key = FeatureStore.Key(instrument, timeframe);
                 if (session.RemoveSubscription(key)) RemoveSubscriptionRef(key);
                 session.SendText(HubJson.Serialize(new { type = "unsubscribed", instrument, timeframe }));
+                return;
+            }
+
+            if (type == "oihistory")
+            {
+                var instrument = Normalize(request.Instrument);
+                var timeframe = NormalizeTimeframe(request.Timeframe);
+                if (instrument.Length == 0)
+                {
+                    SendError(session, "instrument is required");
+                    return;
+                }
+                if (_screenerHistory == null)
+                {
+                    SendError(session, "screener OI history is not configured");
+                    return;
+                }
+
+                try
+                {
+                    var message = _screenerHistory.Fetch(instrument, timeframe, request.Limit ?? 500);
+                    session.SendText(HubJson.Serialize(message));
+                }
+                catch (Exception ex)
+                {
+                    SendError(session, "OI history failed: " + ex.Message);
+                }
                 return;
             }
 

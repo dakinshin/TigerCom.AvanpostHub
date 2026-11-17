@@ -36,6 +36,7 @@
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
                 <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Text="Порт локального WS"/>
@@ -51,6 +52,11 @@
 
                 <CheckBox Grid.Row="3" Grid.Column="1" x:Name="StartMinimizedCheck" Margin="0,10,0,0"
                           Content="При запуске сворачиваться в трей"/>
+
+                <TextBlock Grid.Row="4" Grid.Column="0" Margin="0,12,0,0" VerticalAlignment="Center"
+                           Text="Screener API"/>
+                <TextBox Grid.Row="4" Grid.Column="1" x:Name="ScreenerUrlBox" Margin="0,12,0,0"
+                         Height="28" VerticalContentAlignment="Center"/>
             </Grid>
         </GroupBox>
 

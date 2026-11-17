@@ -56,7 +56,7 @@ Deribit / CME ────────────→│  normalizer  │
                            └──────────────┘
 ```
 
-## 2.1. Статус реализации v0.2
+## 2.1. Статус реализации v0.3
 
 Реализовано:
 
@@ -68,7 +68,9 @@ Deribit / CME ────────────→│  normalizer  │
 - Binance USD-M `forceOrder` liquidations;
 - raw-поток `liq.events.v1`;
 - динамический запуск и остановка коннекторов по подпискам клиентов;
-- `Liquidations` переведён на Hub с сохранением прямого Binance fallback.
+- `Liquidations` переведён на Hub с сохранением прямого Binance fallback;
+- OI history warm-up из screener API (`/api/instruments/.../open-interest`);
+- `oiHistory` по WebSocket для OiFlow.
 
 Ещё не реализовано:
 
