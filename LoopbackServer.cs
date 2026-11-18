@@ -372,6 +372,9 @@ namespace AvanpostHub
                 }
 
                 var accepted = _notifications.Publish(message);
+                if (!accepted.Queued)
+                    HubLog.Info("notification skipped: " + (accepted.DedupeKey ?? "") + " — " +
+                                (accepted.Reason ?? "not queued"));
                 SendHttp(stream, accepted.Queued ? 202 : 200, "application/json", HubJson.Serialize(accepted));
                 return;
             }

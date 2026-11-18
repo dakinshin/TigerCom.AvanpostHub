@@ -3,12 +3,23 @@ using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using System.Windows.Media;
+using System.Windows.Shapes;
 using System.Windows.Threading;
 
 namespace AvanpostHub
 {
     public partial class MainWindow : Window
     {
+        private static readonly Brush OnlineBrush = CreateBrush("#34D399");
+        private static readonly Brush WarningBrush = CreateBrush("#FBBF24");
+        private static readonly Brush OfflineBrush = CreateBrush("#F87171");
+        private static readonly Brush OnlinePillBrush = CreateBrush("#143326");
+        private static readonly Brush OnlinePillBorderBrush = CreateBrush("#27624A");
+        private static readonly Brush OfflinePillBrush = CreateBrush("#3A1D24");
+        private static readonly Brush OfflinePillBorderBrush = CreateBrush("#67313B");
+        private static readonly Brush OnlineTextBrush = CreateBrush("#A7F3D0");
+        private static readonly Brush OfflineTextBrush = CreateBrush("#FCA5A5");
+
         private readonly HubRuntime _runtime;
         private readonly App _app;
         private readonly DispatcherTimer _statusTimer;
@@ -16,8 +27,10 @@ namespace AvanpostHub
         public MainWindow(HubRuntime runtime, App app)
         {
             InitializeComponent();
+            SourceInitialized += (_, __) => WindowTheme.UseDarkTitleBar(this);
             _runtime = runtime;
             _app = app;
+            FitToWorkArea();
 
             _statusTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
             _statusTimer.Tick += (_, __) => UpdateStatus();
@@ -25,13 +38,18 @@ namespace AvanpostHub
             UpdateStatus();
         }
 
-        public void LoadSettings(HubSettings settings)
+        public void RefreshDashboard()
         {
-            if (settings == null) return;
-            PortBox.Text = settings.Port.ToString();
-            ScreenerUrlBox.Text = settings.ScreenerBaseUrl;
-            AutostartCheck.IsChecked = settings.Autostart;
-            StartMinimizedCheck.IsChecked = settings.StartMinimized;
+            UpdateStatus();
+        }
+
+        private void FitToWorkArea()
+        {
+            var area = SystemParameters.WorkArea;
+            MaxWidth = area.Width;
+            MaxHeight = area.Height;
+            if (Width > area.Width - 36) Width = Math.Max(MinWidth, area.Width - 36);
+            if (Height > area.Height - 36) Height = Math.Max(MinHeight, area.Height - 36);
         }
 
         public void ShowFromTray()
@@ -46,17 +64,58 @@ namespace AvanpostHub
         {
             var status = _runtime.GetStatus();
             var running = string.Equals(status.State, "running", StringComparison.OrdinalIgnoreCase);
-            StatusText.Text = running ? "работает" : "остановлен";
-            StatusText.Foreground = running ? Brushes.SeaGreen : Brushes.IndianRed;
-            EndpointText.Text = status.Endpoint;
-            ClientsText.Text = status.Clients + " клиентов · " + status.Subscriptions + " подписок";
-            FeatureText.Text = status.FeatureSeries + " серий · " + status.FeatureBars +
-                              " закрытых баров · " + status.Connectors + " коннекторов";
-            UptimeText.Text = status.UptimeMs <= 0
+            var indicatorsOnline = running && status.Clients > 0;
+            var screenerOnline = running && status.CalibrationAvailable;
+            var exchangesOnline = running && status.Connectors > 0;
+
+            HeaderStatusPill.Background = running ? OnlinePillBrush : OfflinePillBrush;
+            HeaderStatusPill.BorderBrush = running ? OnlinePillBorderBrush : OfflinePillBorderBrush;
+            HeaderStatusDot.Fill = running ? OnlineBrush : OfflineBrush;
+            HeaderStatusText.Foreground = running ? OnlineTextBrush : OfflineTextBrush;
+            HeaderStatusText.Text = running ? "Hub работает" : "Hub остановлен";
+
+            StatusMetricText.Text = running ? "ONLINE" : "OFFLINE";
+            StatusMetricText.Foreground = running ? OnlineBrush : OfflineBrush;
+            StatusMetricDetail.Text = running ? "локальный сервер запущен" : "локальный сервер остановлен";
+            ClientsMetricText.Text = status.Clients.ToString();
+            ClientsMetricDetail.Text = status.Clients + " клиентов · " + status.Subscriptions + " подписок";
+            DataMetricText.Text = status.FeatureBars.ToString("N0");
+            DataMetricDetail.Text = status.FeatureSeries + " серий · " + status.Connectors + " коннекторов";
+            UptimeMetricText.Text = status.UptimeMs <= 0
                 ? "—"
                 : TimeSpan.FromMilliseconds(status.UptimeMs).ToString(@"hh\:mm\:ss");
-            StorageText.Text = status.StoredOiPoints + " OI-точек · " +
-                               status.StoredFeatureBars + " final-баров";
+            UptimeMetricDetail.Text = "версия " + HubVersion.Current;
+
+            HubNodeDetailText.Text = string.IsNullOrWhiteSpace(status.Endpoint)
+                ? "ws://127.0.0.1:" + status.Port + "/ws"
+                : status.Endpoint;
+            HubNodeDot.Fill = running ? OnlineBrush : OfflineBrush;
+            HubNodeStatusText.Text = running ? "Сервер работает" : "Сервер остановлен";
+            HubNodeStatusText.Foreground = running ? OnlineTextBrush : OfflineTextBrush;
+
+            IndicatorNodeDetailText.Text = status.Clients + " клиентов · " + status.Subscriptions + " подписок";
+            IndicatorNodeDot.Fill = indicatorsOnline ? OnlineBrush : (running ? WarningBrush : OfflineBrush);
+            SetLink(IndicatorLink, IndicatorLinkDot,
+                indicatorsOnline ? OnlineBrush : (running ? WarningBrush : OfflineBrush));
+
+            ScreenerNodeStatusText.Text = !running
+                ? "Hub остановлен"
+                : (status.CalibrationAvailable ? "калибровка загружена" : "ожидание калибровки");
+            ScreenerNodeDot.Fill = screenerOnline ? OnlineBrush : (running ? WarningBrush : OfflineBrush);
+            SetLink(ScreenerLink, ScreenerLinkDot,
+                screenerOnline ? OnlineBrush : (running ? WarningBrush : OfflineBrush));
+
+            ExchangeNodeStatusText.Text = !running
+                ? "Hub остановлен"
+                : (exchangesOnline ? "Binance подключён" : "нет активных подписок");
+            ExchangeNodeDetailText.Text = status.Connectors + " активных коннекторов";
+            ExchangeNodeDot.Fill = exchangesOnline ? OnlineBrush : (running ? WarningBrush : OfflineBrush);
+            SetLink(ExchangeLink, ExchangeLinkDot,
+                exchangesOnline ? OnlineBrush : (running ? WarningBrush : OfflineBrush));
+
+            EndpointText.Text = string.IsNullOrWhiteSpace(status.Endpoint) ? "—" : status.Endpoint;
+            StorageText.Text = status.StoredOiPoints.ToString("N0") + " OI-точек · " +
+                               status.StoredFeatureBars.ToString("N0") + " final-баров";
             CalibrationText.Text = status.CalibrationAvailable
                 ? "OiFlow · " + DateTimeOffset.FromUnixTimeMilliseconds(status.CalibrationGeneratedAtMs)
                     .ToLocalTime().ToString("yyyy-MM-dd HH:mm")
@@ -66,43 +125,44 @@ namespace AvanpostHub
             else if (!status.NotificationsConfigured)
                 NotificationsText.Text = "нужны адрес ntfy и топик";
             else
-                NotificationsText.Text = "отправлено " + status.NotificationsSent +
-                                         " · в очереди " + status.NotificationsQueued +
+                NotificationsText.Text = "принято " + status.NotificationsQueued +
+                                         " · отправлено " + status.NotificationsSent +
                                          " · ошибок " + status.NotificationsFailed +
                                          (string.IsNullOrWhiteSpace(status.NotificationLastError)
                                              ? ""
                                              : " · " + status.NotificationLastError);
-            ErrorText.Text = string.IsNullOrWhiteSpace(status.LastError)
-                ? "Хаб слушает 127.0.0.1. Binance Spot/USD-M подключается по подписке индикатора."
-                : status.LastError;
+
+            if (string.IsNullOrWhiteSpace(status.LastError))
+            {
+                ErrorBorder.Visibility = Visibility.Collapsed;
+                ErrorText.Text = "";
+            }
+            else
+            {
+                ErrorBorder.Visibility = Visibility.Visible;
+                ErrorText.Text = status.LastError;
+            }
+
+            VersionText.Text = "Avanpost Hub · " + HubVersion.Current;
         }
 
-        private void Save_Click(object sender, RoutedEventArgs e)
+        private static void SetLink(Shape line, Ellipse dot, Brush brush)
         {
-            int port;
-            if (!int.TryParse(PortBox.Text, out port) || port < 1 || port > 65535)
-            {
-                MessageBox.Show("Порт должен быть числом от 1 до 65535.", "Avanpost Hub",
-                    MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
-            }
+            line.Stroke = brush;
+            line.Opacity = 0.9;
+            dot.Fill = brush;
+        }
 
-            var next = new HubSettings
-            {
-                Port = port,
-                ScreenerBaseUrl = ScreenerUrlBox.Text.Trim(),
-                Autostart = AutostartCheck.IsChecked == true,
-                StartMinimized = StartMinimizedCheck.IsChecked == true,
-                Notifications = _app.Settings.Notifications.Clone(),
-            };
+        private void Settings_Click(object sender, RoutedEventArgs e)
+        {
+            var window = new SettingsWindow(_app) { Owner = this };
+            if (window.ShowDialog() == true) UpdateStatus();
+        }
 
-            var error = _app.ApplySettings(next);
-            if (!string.IsNullOrWhiteSpace(error))
-            {
-                MessageBox.Show(error, "Avanpost Hub", MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
-            }
-
+        private void Notifications_Click(object sender, RoutedEventArgs e)
+        {
+            var window = new NotificationsWindow(_app, _runtime) { Owner = this };
+            window.ShowDialog();
             UpdateStatus();
         }
 
@@ -111,13 +171,12 @@ namespace AvanpostHub
             var error = _runtime.Restart(_app.Settings);
             if (!string.IsNullOrWhiteSpace(error))
                 MessageBox.Show(error, "Avanpost Hub", MessageBoxButton.OK, MessageBoxImage.Warning);
+            _app.RefreshTrayStatus();
             UpdateStatus();
         }
 
-        private void Notifications_Click(object sender, RoutedEventArgs e)
+        private void Refresh_Click(object sender, RoutedEventArgs e)
         {
-            var window = new NotificationsWindow(_app, _runtime) { Owner = this };
-            window.ShowDialog();
             UpdateStatus();
         }
 
@@ -148,6 +207,13 @@ namespace AvanpostHub
             if (_app.IsExiting) return;
             e.Cancel = true;
             Hide();
+        }
+
+        private static Brush CreateBrush(string hex)
+        {
+            var brush = (SolidColorBrush)new BrushConverter().ConvertFromString(hex);
+            brush.Freeze();
+            return brush;
         }
     }
 }

@@ -50,7 +50,7 @@ namespace AvanpostHub
                 () => _settings.Autostart,
                 SetAutostartFromTray);
 
-            _mainWindow.LoadSettings(_settings);
+            _mainWindow.RefreshDashboard();
             _tray.RefreshAutostart();
 
             var startError = _runtime.Restart(_settings);
@@ -95,7 +95,7 @@ namespace AvanpostHub
 
             var error = restart ? _runtime.Restart(next) : null;
             if (!restart) _runtime.ConfigureNotifications(_settings.Notifications);
-            _mainWindow.LoadSettings(_settings);
+            _mainWindow.RefreshDashboard();
             _tray.RefreshAutostart();
             _tray.UpdateStatus(_runtime.GetStatus());
             return error;
@@ -113,7 +113,7 @@ namespace AvanpostHub
                 return;
             }
 
-            _mainWindow.LoadSettings(_settings);
+            _mainWindow.RefreshDashboard();
             _tray.RefreshAutostart();
         }
 
@@ -121,6 +121,11 @@ namespace AvanpostHub
         {
             if (_mainWindow == null) return;
             _mainWindow.ShowFromTray();
+        }
+
+        public void RefreshTrayStatus()
+        {
+            _tray?.UpdateStatus(_runtime.GetStatus());
         }
 
         public void ExitApplication()

@@ -12,6 +12,7 @@ namespace AvanpostHub
         public NotificationsWindow(App app, HubRuntime runtime)
         {
             InitializeComponent();
+            SourceInitialized += (_, __) => WindowTheme.UseDarkTitleBar(this);
             _app = app;
             _runtime = runtime;
             LoadSettings(_app.Settings.Notifications ?? new NotificationSettings());
@@ -42,31 +43,31 @@ namespace AvanpostHub
             settings.Enabled = true;
             if (string.IsNullOrWhiteSpace(settings.NtfyTopic))
             {
-                TestStatusText.Foreground = Brushes.IndianRed;
+                TestStatusText.Foreground = (Brush)FindResource("DangerBrush");
                 TestStatusText.Text = "Укажите топик.";
                 return;
             }
 
             TestButton.IsEnabled = false;
-            TestStatusText.Foreground = new SolidColorBrush(Color.FromRgb(74, 85, 99));
+            TestStatusText.Foreground = (Brush)FindResource("TextSecondaryBrush");
             TestStatusText.Text = "Отправляю…";
             try
             {
                 var result = await _runtime.Notifications.SendTestAsync(settings);
                 if (result.Success)
                 {
-                    TestStatusText.Foreground = Brushes.SeaGreen;
+                    TestStatusText.Foreground = (Brush)FindResource("AccentBrush");
                     TestStatusText.Text = "Тестовое уведомление отправлено.";
                 }
                 else
                 {
-                    TestStatusText.Foreground = Brushes.IndianRed;
+                    TestStatusText.Foreground = (Brush)FindResource("DangerBrush");
                     TestStatusText.Text = "Ошибка: " + (result.Error ?? "неизвестная");
                 }
             }
             catch (Exception ex)
             {
-                TestStatusText.Foreground = Brushes.IndianRed;
+                TestStatusText.Foreground = (Brush)FindResource("DangerBrush");
                 TestStatusText.Text = "Ошибка: " + ex.Message;
             }
             finally

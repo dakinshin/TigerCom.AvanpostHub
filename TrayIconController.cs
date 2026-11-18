@@ -12,6 +12,8 @@ namespace AvanpostHub
         private readonly ToolStripMenuItem _autostartItem;
         private readonly Func<bool> _isAutostart;
         private readonly Action<bool> _setAutostart;
+        private readonly Icon _appIcon;
+        private readonly bool _ownsAppIcon;
         private bool _disposed;
 
         public TrayIconController(
@@ -50,9 +52,10 @@ namespace AvanpostHub
             exitItem.Click += (_, __) => exit();
             _menu.Items.Add(exitItem);
 
+            _appIcon = LoadAppIcon(out _ownsAppIcon);
             _icon = new NotifyIcon
             {
-                Icon = SystemIcons.Application,
+                Icon = _appIcon,
                 Text = "Avanpost Hub",
                 Visible = true,
                 ContextMenuStrip = _menu,
@@ -81,7 +84,29 @@ namespace AvanpostHub
             _disposed = true;
             _icon.Visible = false;
             _icon.Dispose();
+            if (_ownsAppIcon) _appIcon.Dispose();
             _menu.Dispose();
+        }
+
+        private static Icon LoadAppIcon(out bool ownsIcon)
+        {
+            try
+            {
+                var resource = System.Windows.Application.GetResourceStream(
+                    new Uri("pack://application:,,,/Assets/avanpost.ico", UriKind.Absolute));
+                if (resource != null && resource.Stream != null)
+                {
+                    ownsIcon = true;
+                    return new Icon(resource.Stream);
+                }
+            }
+            catch
+            {
+                // Иконка не должна мешать запуску Hub.
+            }
+
+            ownsIcon = false;
+            return SystemIcons.Application;
         }
     }
 }

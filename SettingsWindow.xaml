@@ -1,0 +1,93 @@
+<Window x:Class="AvanpostHub.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Настройки · Avanpost Hub"
+        Width="680"
+        Height="610"
+        MinWidth="620"
+        MinHeight="520"
+        WindowStartupLocation="CenterOwner"
+        Background="{StaticResource AppBgBrush}"
+        Foreground="{StaticResource TextPrimaryBrush}"
+        FontFamily="Segoe UI"
+        Icon="pack://application:,,,/Assets/avanpost.ico"
+        TextOptions.TextFormattingMode="Display"
+        UseLayoutRounding="True">
+    <Grid Margin="26">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <Grid Grid.Row="0" Margin="0,0,0,20">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <Image Width="52" Height="52" Source="pack://application:,,,/Assets/avanpost-mark.png"/>
+            <StackPanel Grid.Column="1" Margin="15,0,0,0" VerticalAlignment="Center">
+                <TextBlock Text="Настройки Hub" FontSize="24" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}"/>
+                <TextBlock Text="Подключение, screener API и поведение при запуске."
+                           Margin="0,4,0,0" Style="{StaticResource CaptionStyle}"/>
+            </StackPanel>
+        </Grid>
+
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                          HorizontalContentAlignment="Stretch" VerticalContentAlignment="Top">
+            <StackPanel Margin="0,0,4,0">
+                <Border Style="{StaticResource CardBorderStyle}" Margin="0,0,0,14">
+                    <StackPanel>
+                        <TextBlock Text="Подключение" Style="{StaticResource SectionTitleStyle}"/>
+                        <TextBlock Text="Локальный WebSocket, который используют индикаторы Tiger.com."
+                                   Margin="0,5,0,18" Style="{StaticResource CaptionStyle}"/>
+
+                        <TextBlock Text="Порт локального WebSocket" Style="{StaticResource FieldLabelStyle}"/>
+                        <TextBox x:Name="PortBox" Width="150" HorizontalAlignment="Left"
+                                 Style="{StaticResource DarkTextBoxStyle}"/>
+                        <TextBlock Text="По умолчанию 7830. После сохранения сервер будет перезапущен."
+                                   Margin="0,6,0,16" Style="{StaticResource MutedStyle}"/>
+
+                        <TextBlock Text="Screener API" Style="{StaticResource FieldLabelStyle}"/>
+                        <TextBox x:Name="ScreenerUrlBox" Style="{StaticResource DarkTextBoxStyle}"/>
+                        <TextBlock Text="Используется для истории OI и профиля калибровки OiFlow."
+                                   Margin="0,6,0,0" Style="{StaticResource MutedStyle}"/>
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource CardBorderStyle}" Margin="0,0,0,14">
+                    <StackPanel>
+                        <TextBlock Text="Запуск" Style="{StaticResource SectionTitleStyle}"/>
+                        <TextBlock Text="Hub работает в системном трее и не мешает терминалу."
+                                   Margin="0,5,0,16" Style="{StaticResource CaptionStyle}"/>
+                        <CheckBox x:Name="AutostartCheck" Style="{StaticResource DarkCheckBoxStyle}"
+                                  Content="Запускать Avanpost Hub при входе в Windows"/>
+                        <CheckBox x:Name="StartMinimizedCheck" Style="{StaticResource DarkCheckBoxStyle}"
+                                  Content="При запуске сворачивать в трей" Margin="0,12,0,0"/>
+                    </StackPanel>
+                </Border>
+
+                <Border Background="#10231E" BorderBrush="#2C7558" BorderThickness="1"
+                        CornerRadius="12" Padding="15">
+                    <StackPanel Orientation="Horizontal">
+                        <Ellipse Width="8" Height="8" Fill="{StaticResource AccentBrush}"
+                                 VerticalAlignment="Top" Margin="0,4,10,0"/>
+                        <TextBlock Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" TextWrapping="Wrap"
+                                   Text="Порт и адрес screener применяются сразу после «Сохранить». Если вы изменили порт, проверьте, что индикаторы в Tiger используют тот же порт."/>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </ScrollViewer>
+
+        <Grid Grid.Row="2" Margin="0,18,0,0">
+            <TextBlock Text="Все параметры хранятся локально."
+                       VerticalAlignment="Center" Style="{StaticResource MutedStyle}"/>
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Content="Отмена" Width="105" Style="{StaticResource SecondaryButtonStyle}"
+                        Click="Cancel_Click" Margin="0,0,10,0" IsCancel="True"/>
+                <Button Content="Сохранить" Width="120" Style="{StaticResource PrimaryButtonStyle}"
+                        Click="Save_Click" IsDefault="True"/>
+            </StackPanel>
+        </Grid>
+    </Grid>
+</Window>
