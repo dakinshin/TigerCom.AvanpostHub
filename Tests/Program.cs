@@ -32,6 +32,7 @@ internal static class Program
         TestBinanceInstrument();
         TestBinanceJson();
         TestBinanceAggregator();
+        TestBinanceQuality();
         TestLoopbackServer();
         TestNotificationService();
         TestNotificationHttp();
@@ -315,6 +316,54 @@ internal static class Program
         Check(history.Count == 1 && history[0].Final && history[0].BarOpenMs == start,
             "aggregator finalizes previous bar");
         Check(history[0].Context.SpotDeltaShare == 1, "aggregator stores normalized spot flow");
+    }
+
+    private static void TestBinanceQuality()
+    {
+        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+        var spotQuietStore = new FeatureStore();
+        var spotQuiet = new BinanceFeatureAggregator(spotQuietStore, "BINANCE:BULLAUSDT:PERP", "1m");
+        spotQuiet.OnSpotTrade(new BinanceTrade
+        {
+            Symbol = "BULLAUSDT", TradeTimeMs = now - 10000, Price = 1, Quantity = 1, BuyerIsMaker = false,
+        });
+        spotQuiet.OnPerpTrade(new BinanceTrade
+        {
+            Symbol = "BULLAUSDT", TradeTimeMs = now, Price = 1, Quantity = 1, BuyerIsMaker = false,
+        });
+        spotQuiet.OnMarkPrice(new BinanceMarkPrice
+        {
+            Symbol = "BULLAUSDT", EventTimeMs = now, MarkPrice = 1, IndexPrice = 1, FundingRate = 0.0001,
+        });
+        spotQuiet.OnOpenInterest(new BinanceOpenInterest
+        {
+            Symbol = "BULLAUSDT", TimeMs = now, OpenInterest = 1000,
+        });
+        spotQuiet.Flush();
+        var quietSnapshot = spotQuietStore.GetLatest("BINANCE:BULLAUSDT:PERP", "1m");
+        Check(quietSnapshot != null && !quietSnapshot.Quality.Stale &&
+              quietSnapshot.Quality.SpotAgeMs >= 5000 &&
+              quietSnapshot.Quality.Warnings != null &&
+              quietSnapshot.Quality.Warnings.Any(x => x.Contains("spot quiet", StringComparison.Ordinal)),
+            "тихий спот не делает весь feature stale");
+
+        var staleStore = new FeatureStore();
+        var staleAgg = new BinanceFeatureAggregator(staleStore, "BINANCE:BTWUSDT:PERP", "1m");
+        staleAgg.OnOpenInterest(new BinanceOpenInterest
+        {
+            Symbol = "BTWUSDT", TimeMs = now - 20000, OpenInterest = 1000,
+        });
+        staleAgg.OnMarkPrice(new BinanceMarkPrice
+        {
+            Symbol = "BTWUSDT", EventTimeMs = now, MarkPrice = 1, IndexPrice = 1, FundingRate = 0.0001,
+        });
+        staleAgg.Flush();
+        var staleSnapshot = staleStore.GetLatest("BINANCE:BTWUSDT:PERP", "1m");
+        Check(staleSnapshot != null && staleSnapshot.Quality.Stale &&
+              staleSnapshot.Quality.Warnings != null &&
+              staleSnapshot.Quality.Warnings.Any(x => x.Contains("OI stale", StringComparison.Ordinal)),
+            "устаревший OI делает feature stale");
     }
 
     private static void TestLoopbackServer()

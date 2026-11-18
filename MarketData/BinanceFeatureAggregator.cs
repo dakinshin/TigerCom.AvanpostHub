@@ -32,6 +32,9 @@ namespace AvanpostHub.MarketData
         private long _lastMarkEventMs;
         private long _lastOiEventMs;
         private long _lastLivePublishTick;
+        private bool _qualityLogInitialized;
+        private bool _lastStale;
+        private bool _lastSpotQuiet;
 
         public BinanceFeatureAggregator(
             FeatureStore store,
@@ -218,7 +221,34 @@ namespace AvanpostHub.MarketData
         {
             if (_bar == null) return;
             var snapshot = BuildSnapshot(final, asOfMs);
+            LogQualityTransition(snapshot);
             _store.Publish(snapshot);
+        }
+
+        private void LogQualityTransition(FeatureSnapshot snapshot)
+        {
+            if (snapshot == null || snapshot.Quality == null) return;
+            var spotQuiet = snapshot.Quality.SpotAgeMs.HasValue && snapshot.Quality.SpotAgeMs.Value > 5000;
+            var stale = snapshot.Quality.Stale;
+            if (!_qualityLogInitialized || stale != _lastStale || spotQuiet != _lastSpotQuiet)
+            {
+                _qualityLogInitialized = true;
+                _lastStale = stale;
+                _lastSpotQuiet = spotQuiet;
+                var message = "feature quality " + _instrument + " " + _timeframe +
+                              " stale=" + (stale ? "true" : "false") +
+                              " spotAgeMs=" + (snapshot.Quality.SpotAgeMs.HasValue
+                                  ? snapshot.Quality.SpotAgeMs.Value.ToString()
+                                  : "-") +
+                              " oiAgeMs=" + (snapshot.Quality.OiAgeMs.HasValue
+                                  ? snapshot.Quality.OiAgeMs.Value.ToString()
+                                  : "-") +
+                              " markAgeMs=" + (snapshot.Quality.FundingAgeMs.HasValue
+                                  ? snapshot.Quality.FundingAgeMs.Value.ToString()
+                                  : "-");
+                if (stale) HubLog.Warn(message);
+                else HubLog.Info(message);
+            }
         }
 
         private FeatureSnapshot BuildSnapshot(bool final, long asOfMs)
@@ -259,9 +289,16 @@ namespace AvanpostHub.MarketData
             var spotAge = _lastSpotEventMs > 0 ? Math.Max(0, nowMs - _lastSpotEventMs) : (long?)null;
             var oiAge = _lastOiEventMs > 0 ? Math.Max(0, nowMs - _lastOiEventMs) : (long?)null;
             var fundingAge = _lastMarkEventMs > 0 ? Math.Max(0, nowMs - _lastMarkEventMs) : (long?)null;
-            var stale = (spotAge.HasValue && spotAge.Value > 5000) ||
-                        (oiAge.HasValue && oiAge.Value > 15000) ||
-                        (fundingAge.HasValue && fundingAge.Value > 15000);
+            // Тихий спот — это отсутствие подтверждения, а не битый контекст.
+            // Иначе на новых/неликвидных парах confidence пропадает целиком.
+            var spotQuiet = spotAge.HasValue && spotAge.Value > 5000;
+            var oiStale = oiAge.HasValue && oiAge.Value > 15000;
+            var markStale = fundingAge.HasValue && fundingAge.Value > 15000;
+            var stale = oiStale || markStale;
+            var warnings = new List<string>();
+            if (spotQuiet) warnings.Add("spot quiet " + spotAge.Value + "ms");
+            if (oiStale) warnings.Add("OI stale " + oiAge.Value + "ms");
+            if (markStale) warnings.Add("mark/funding stale " + fundingAge.Value + "ms");
 
             return new FeatureSnapshot
             {
@@ -312,6 +349,7 @@ namespace AvanpostHub.MarketData
                     FundingAgeMs = fundingAge,
                     PartialLiquidations = true,
                     Source = "BINANCE",
+                    Warnings = warnings.Count == 0 ? null : warnings.ToArray(),
                 },
             };
         }
