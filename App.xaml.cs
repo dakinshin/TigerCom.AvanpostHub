@@ -94,6 +94,7 @@ namespace AvanpostHub
             }
 
             var error = restart ? _runtime.Restart(next) : null;
+            if (!restart) _runtime.ConfigureNotifications(_settings.Notifications);
             _mainWindow.LoadSettings(_settings);
             _tray.RefreshAutostart();
             _tray.UpdateStatus(_runtime.GetStatus());

@@ -45,6 +45,7 @@ namespace AvanpostHub
         private readonly ScreenerOiHistoryClient _screenerHistory;
         private readonly HubStorage _storage;
         private readonly OiFlowCalibrationStore _calibration;
+        private readonly NotificationService _notifications;
         private readonly object _gate = new object();
         private readonly ConcurrentDictionary<long, ClientSession> _clients =
             new ConcurrentDictionary<long, ClientSession>();
@@ -64,12 +65,14 @@ namespace AvanpostHub
         private int _port;
 
         public LoopbackServer(FeatureStore features, ScreenerOiHistoryClient screenerHistory = null,
-            HubStorage storage = null, OiFlowCalibrationStore calibration = null)
+            HubStorage storage = null, OiFlowCalibrationStore calibration = null,
+            NotificationService notifications = null)
         {
             _features = features ?? throw new ArgumentNullException(nameof(features));
             _screenerHistory = screenerHistory;
             _storage = storage;
             _calibration = calibration;
+            _notifications = notifications;
             if (_calibration != null) _calibration.Updated += OnCalibrationUpdated;
         }
 
@@ -144,6 +147,7 @@ namespace AvanpostHub
         public HubStatus GetStatus()
         {
             var started = Interlocked.Read(ref _startedAtMs);
+            var notificationStatus = _notifications == null ? null : _notifications.GetStatus();
             return new HubStatus
             {
                 State = _running ? "running" : "stopped",
@@ -157,6 +161,12 @@ namespace AvanpostHub
                 FeatureSeries = _features.SeriesCount,
                 FeatureBars = _features.HistoryCount,
                 Connectors = 0,
+                NotificationsSent = notificationStatus == null ? 0 : notificationStatus.Sent,
+                NotificationsFailed = notificationStatus == null ? 0 : notificationStatus.Failed,
+                NotificationsQueued = notificationStatus == null ? 0 : notificationStatus.Queued,
+                NotificationsEnabled = notificationStatus != null && notificationStatus.Enabled,
+                NotificationsConfigured = notificationStatus != null && notificationStatus.Configured,
+                NotificationLastError = notificationStatus == null ? "" : notificationStatus.LastError,
                 LastError = _lastError,
             };
         }
@@ -326,6 +336,43 @@ namespace AvanpostHub
                     timeframe,
                     rows,
                 }));
+                return;
+            }
+
+            if (request.Method == "GET" && path == "/v1/notifications/status")
+            {
+                var status = _notifications == null ? new NotificationStatus() : _notifications.GetStatus();
+                SendHttp(stream, 200, "application/json", HubJson.Serialize(status));
+                return;
+            }
+
+            if (request.Method == "POST" && path == "/v1/notifications")
+            {
+                if (_notifications == null)
+                {
+                    SendHttp(stream, 503, "application/json",
+                        HubJson.Serialize(new { type = "error", message = "notifications are not available" }));
+                    return;
+                }
+
+                NotificationMessage message;
+                try { message = HubJson.Deserialize<NotificationMessage>(request.Body); }
+                catch (Exception ex)
+                {
+                    SendHttp(stream, 400, "application/json",
+                        HubJson.Serialize(new { type = "error", message = "invalid notification: " + ex.Message }));
+                    return;
+                }
+
+                if (message == null)
+                {
+                    SendHttp(stream, 400, "application/json",
+                        HubJson.Serialize(new { type = "error", message = "empty notification" }));
+                    return;
+                }
+
+                var accepted = _notifications.Publish(message);
+                SendHttp(stream, accepted.Queued ? 202 : 200, "application/json", HubJson.Serialize(accepted));
                 return;
             }
 
@@ -824,17 +871,53 @@ namespace AvanpostHub
         private static HttpRequest ReadHttpRequest(NetworkStream stream)
         {
             var buffer = new MemoryStream();
-            var temp = new byte[2048];
+            var temp = new byte[4096];
+            var headerEnd = -1;
             while (buffer.Length < MaxRequestBytes)
             {
                 var n = stream.Read(temp, 0, temp.Length);
                 if (n <= 0) return null;
                 buffer.Write(temp, 0, n);
-                var text = Encoding.ASCII.GetString(buffer.GetBuffer(), 0, (int)buffer.Length);
-                var end = text.IndexOf("\r\n\r\n", StringComparison.Ordinal);
-                if (end >= 0) return ParseHttpRequest(text.Substring(0, end));
+                headerEnd = FindHeaderEnd(buffer.GetBuffer(), (int)buffer.Length);
+                if (headerEnd >= 0) break;
             }
-            return null;
+            if (headerEnd < 0) return null;
+
+            var headerText = Encoding.ASCII.GetString(buffer.GetBuffer(), 0, headerEnd);
+            var request = ParseHttpRequest(headerText);
+            if (request == null) return null;
+
+            var contentLength = 0;
+            string contentLengthText;
+            if (request.Headers.TryGetValue("Content-Length", out contentLengthText) &&
+                !int.TryParse(contentLengthText, NumberStyles.Integer, CultureInfo.InvariantCulture, out contentLength))
+                return null;
+            if (contentLength < 0 || contentLength > MaxRequestBytes - (headerEnd + 4)) return null;
+
+            var bodyOffset = headerEnd + 4;
+            while (buffer.Length < bodyOffset + contentLength)
+            {
+                var n = stream.Read(temp, 0, temp.Length);
+                if (n <= 0) return null;
+                buffer.Write(temp, 0, n);
+                if (buffer.Length > MaxRequestBytes) return null;
+            }
+
+            if (contentLength > 0)
+                request.Body = Encoding.UTF8.GetString(buffer.GetBuffer(), bodyOffset, contentLength);
+            return request;
+        }
+
+        private static int FindHeaderEnd(byte[] bytes, int length)
+        {
+            if (bytes == null || length < 4) return -1;
+            for (var i = 3; i < length; i++)
+            {
+                if (bytes[i - 3] == (byte)'\r' && bytes[i - 2] == (byte)'\n' &&
+                    bytes[i - 1] == (byte)'\r' && bytes[i] == (byte)'\n')
+                    return i - 3;
+            }
+            return -1;
         }
 
         private static HttpRequest ParseHttpRequest(string header)
@@ -1013,6 +1096,7 @@ namespace AvanpostHub
             public string Path;
             public string Query;
             public Dictionary<string, string> Headers;
+            public string Body = "";
             public bool IsWebSocket;
         }
 

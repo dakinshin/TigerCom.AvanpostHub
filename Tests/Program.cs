@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -24,6 +25,7 @@ internal static class Program
         TestJsonContract();
         TestRequestContract();
         TestSettingsSanitize();
+        TestNotificationSettings();
         TestSettingsStore();
         TestHubStorage();
         TestOiFlowCalibration();
@@ -31,6 +33,8 @@ internal static class Program
         TestBinanceJson();
         TestBinanceAggregator();
         TestLoopbackServer();
+        TestNotificationService();
+        TestNotificationHttp();
 
         Console.WriteLine(_failed == 0 ? "AvanpostHub tests: OK" : "AvanpostHub tests: FAILED " + _failed);
         return _failed == 0 ? 0 : 1;
@@ -121,6 +125,26 @@ internal static class Program
         Check(settings.ScreenerBaseUrl == "https://avanpost.io", "Screener URL нормализуется");
         Check(settings.Autostart, "autostart сохраняется");
         Check(!settings.StartMinimized, "startMinimized сохраняется");
+    }
+
+    private static void TestNotificationSettings()
+    {
+        var settings = new HubSettings
+        {
+            Notifications = new NotificationSettings
+            {
+                Enabled = true,
+                NtfyBaseUrl = "",
+                NtfyTopic = "  topic  ",
+            },
+        }.Sanitized();
+
+        Check(settings.Notifications.NtfyBaseUrl == "https://ntfy.sh", "пустой ntfy URL заменяется на ntfy.sh");
+        Check(settings.Notifications.NtfyTopic == "topic", "ntfy topic нормализуется");
+
+        var clone = settings.Clone();
+        clone.Notifications.NtfyTopic = "other";
+        Check(settings.Notifications.NtfyTopic == "topic", "clone настроек уведомлений глубокий");
     }
 
     private static void TestSettingsStore()
@@ -367,6 +391,110 @@ internal static class Program
         try { File.Delete(calibrationPath); } catch { }
     }
 
+    private static void TestNotificationService()
+    {
+        var handler = new CaptureHandler();
+        using (var service = new NotificationService(handler))
+        {
+            service.Configure(new NotificationSettings
+            {
+                Enabled = true,
+                NtfyBaseUrl = "https://ntfy.example",
+                NtfyTopic = "private-topic",
+            });
+
+            var expired = new NotificationMessage
+            {
+                DedupeKey = "expired",
+                Title = "old",
+                Body = "old",
+                OccurredAtMs = DateTimeOffset.UtcNow.AddMinutes(-10).ToUnixTimeMilliseconds(),
+                ExpiresAtMs = DateTimeOffset.UtcNow.AddMinutes(-5).ToUnixTimeMilliseconds(),
+            };
+            var rejected = service.Publish(expired);
+            Check(!rejected.Queued && rejected.Reason.Contains("устарело", StringComparison.Ordinal),
+                "просроченное сообщение не отправляется");
+
+            var message = new NotificationMessage
+            {
+                DedupeKey = "oiflow|BINANCE:BTCUSDT:PERP|1m|NewLongs|1000",
+                Title = "BTCUSDT | NewLongs | A",
+                Body = "Новые лонги\nУверенность A",
+                Tags = new[] { "chart_with_upwards_trend", "fire" },
+                Priority = 5,
+                OccurredAtMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                ExpiresAtMs = DateTimeOffset.UtcNow.AddMinutes(5).ToUnixTimeMilliseconds(),
+            };
+            var accepted = service.Publish(message);
+            Check(accepted.Queued, "готовое сообщение ставится в очередь");
+            var duplicate = service.Publish(message);
+            Check(duplicate.Duplicate && !duplicate.Queued, "повторный dedupeKey не отправляется");
+
+            var captured = handler.Wait(TimeSpan.FromSeconds(5));
+            Check(captured != null && captured.Url == "https://ntfy.example/private-topic",
+                "ntfy POST идёт на настроенный сервер и topic");
+            Check(captured != null && captured.Title == "BTCUSDT | NewLongs | A",
+                "Hub передаёт готовый Title без интерпретации");
+            Check(captured != null && captured.Body.Contains("Новые лонги", StringComparison.Ordinal),
+                "Hub передаёт готовый Body без интерпретации");
+            Check(captured != null && captured.Priority == "5", "Hub передаёт priority сообщения");
+
+            WaitUntil(() => service.GetStatus().Sent == 1, TimeSpan.FromSeconds(2));
+            var status = service.GetStatus();
+            Check(status.Sent == 1 && status.Duplicates == 1, "статус уведомлений считает отправки и дубли");
+        }
+    }
+
+    private static void TestNotificationHttp()
+    {
+        var port = FindFreePort();
+        var store = new FeatureStore();
+        var handler = new CaptureHandler();
+        using (var notifications = new NotificationService(handler))
+        {
+            notifications.Configure(new NotificationSettings
+            {
+                Enabled = true,
+                NtfyBaseUrl = "https://ntfy.example",
+                NtfyTopic = "http-topic",
+            });
+
+            using (var server = new LoopbackServer(store, null, null, null, notifications))
+            {
+                server.Start(port);
+                using (var http = new HttpClient())
+                {
+                    var json = HubJson.Serialize(new NotificationMessage
+                    {
+                        DedupeKey = "http-event",
+                        Title = "ETHUSDT | ClimaxLongs | B",
+                        Body = "Кульминация лонгов",
+                        Tags = new[] { "fire" },
+                        Priority = 4,
+                        OccurredAtMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                    });
+                    var post = http.PostAsync("http://127.0.0.1:" + port + "/v1/notifications",
+                        new StringContent(json, Encoding.UTF8, "application/json")).GetAwaiter().GetResult();
+                    Check((int)post.StatusCode == 202, "HTTP /v1/notifications принимает готовое сообщение");
+
+                    var captured = handler.Wait(TimeSpan.FromSeconds(5));
+                    Check(captured != null && captured.Body.Contains("Кульминация лонгов", StringComparison.Ordinal),
+                        "HTTP-сообщение доходит до ntfy");
+
+                    string status = "";
+                    WaitUntil(() =>
+                    {
+                        status = http.GetStringAsync("http://127.0.0.1:" + port + "/v1/notifications/status")
+                            .GetAwaiter().GetResult();
+                        return status.Contains("\"sent\":1", StringComparison.Ordinal);
+                    }, TimeSpan.FromSeconds(2));
+                    Check(status.Contains("\"sent\":1", StringComparison.Ordinal),
+                        "HTTP status уведомлений отражает отправку");
+                }
+            }
+        }
+    }
+
     private static int FindFreePort()
     {
         var listener = new TcpListener(IPAddress.Loopback, 0);
@@ -411,6 +539,63 @@ internal static class Program
             Context = new ContextFeatures { GlobalOiDeltaPct = delta },
             Quality = new QualityFeatures { Source = "test", FreshVenues = 3 },
         };
+    }
+
+    private static bool WaitUntil(Func<bool> condition, TimeSpan timeout)
+    {
+        var until = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < until)
+        {
+            if (condition()) return true;
+            Thread.Sleep(20);
+        }
+        return condition();
+    }
+
+    private sealed class CapturedNotification
+    {
+        public string Url;
+        public string Title = "";
+        public string Tags = "";
+        public string Priority = "";
+        public string Body = "";
+    }
+
+    private sealed class CaptureHandler : HttpMessageHandler
+    {
+        private readonly TaskCompletionSource<CapturedNotification> _captured =
+            new TaskCompletionSource<CapturedNotification>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public CapturedNotification Wait(TimeSpan timeout)
+        {
+            try { return _captured.Task.Wait(timeout) ? _captured.Task.Result : null; }
+            catch { return null; }
+        }
+
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var body = request.Content == null
+                ? ""
+                : await request.Content.ReadAsStringAsync().ConfigureAwait(false);
+            _captured.TrySetResult(new CapturedNotification
+            {
+                Url = request.RequestUri == null ? "" : request.RequestUri.ToString(),
+                Title = Header(request, "Title"),
+                Tags = Header(request, "Tags"),
+                Priority = Header(request, "Priority"),
+                Body = body,
+            });
+            return new HttpResponseMessage(HttpStatusCode.OK);
+        }
+
+        private static string Header(HttpRequestMessage request, string name)
+        {
+            IEnumerable<string> values;
+            return request.Headers.TryGetValues(name, out values)
+                ? string.Join(",", values)
+                : "";
+        }
     }
 
     private static void Check(bool condition, string message)

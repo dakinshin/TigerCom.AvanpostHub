@@ -12,7 +12,7 @@ Tiger -> индикатор -> ws://127.0.0.1:7830/ws -> AvanpostHub -> бирж
 
 ## Текущая версия
 
-v0.4 — Binance Spot + USD-M + OI history + calibration:
+v0.5 — Binance Spot + USD-M + OI history + calibration + ntfy alerts:
 
 - WPF-приложение с иконкой в трее;
 - single-instance;
@@ -31,6 +31,10 @@ v0.4 — Binance Spot + USD-M + OI history + calibration:
 - durable JSONL-хранилище OI-точек и final feature-баров;
 - кеш offline-профиля OiFlow calibration из screener API;
 - HTTP/WebSocket-раздача исторической confidence-оценки;
+- ntfy-транспорт: индикаторы присылают готовое сообщение, Hub отправляет его
+  в фоне и не интерпретирует сигналы;
+- дедупликация одинаковых сообщений по `dedupeKey`;
+- настройка ntfy URL/topic/access token в отдельном окне;
 - on-demand запуск коннекторов по подписке индикатора;
 - автоматический stop коннекторов при отписке последнего клиента;
 - тесты ядра, парсеров и локального транспорта.
@@ -80,7 +84,17 @@ AvanpostHub\bin\Release\net10.0-windows\win-x64\publish\AvanpostHub.exe
 
 - порт локального WebSocket — по умолчанию `7830`;
 - автозапуск при входе в Windows;
-- `Screener API` — по умолчанию `https://avanpost.io`.
+- `Screener API` — по умолчанию `https://avanpost.io`;
+- `Уведомления` — ntfy URL, topic и access token (опционально).
+
+Hub — только транспорт. Какие сигналы и с какой минимальной уверенностью
+отправлять, решает сам индикатор. OI Flow Shade делает это в своих настройках
+(категория `3. Уведомления`) и присылает в Hub уже готовые `Title`, `Body`,
+`Tags` и `dedupeKey`. Поэтому Hub не знает ни про OI Flow, ни про `A/B/C`.
+
+Уже отправленное сообщение дедуплицируется по `dedupeKey`, который формирует
+индикатор. Один и тот же маркер с нескольких графиков не создаёт несколько
+push-сообщений.
 
 Hub использует screener только для истории OI (`open-interest`), live-данные
 остаются из Binance-коннекторов Hub.
@@ -109,7 +123,26 @@ GET http://127.0.0.1:7830/v1/status
 GET http://127.0.0.1:7830/v1/features/latest?instrument=BINANCE:BTCUSDT:PERP&timeframe=1m
 GET http://127.0.0.1:7830/v1/features/history?instrument=BINANCE:BTCUSDT:PERP&timeframe=1m&limit=500
 GET http://127.0.0.1:7830/v1/calibration/oi-flow
+GET http://127.0.0.1:7830/v1/notifications/status
+POST http://127.0.0.1:7830/v1/notifications
 ```
+
+`POST /v1/notifications` принимает готовое транспортное сообщение:
+```json
+{
+  "dedupeKey": "oiflow|BINANCE:BTCUSDT:PERP|1m|NewLongs|1763478060000",
+  "title": "BTCUSDT | NewLongs | A",
+  "body": "Новые лонги\nУверенность A · 1m · цена 91250.5",
+  "tags": ["chart_with_upwards_trend", "fire"],
+  "priority": 5,
+  "occurredAtMs": 1763478120000,
+  "expiresAtMs": 1763478420000
+}
+```
+
+Ответ `202 Accepted` означает, что сообщение поставлено на отправку.
+`200 OK` с `queued: false` — транспорт выключен, ntfy не настроен или это
+сообщение уже отправлялось.
 
 WebSocket:
 

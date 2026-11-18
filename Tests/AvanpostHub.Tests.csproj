@@ -13,6 +13,8 @@
     <Compile Include="../FeatureStore.cs" />
     <Compile Include="../HubJson.cs" />
     <Compile Include="../HubSettings.cs" />
+    <Compile Include="../NotificationModels.cs" />
+    <Compile Include="../NotificationService.cs" />
     <Compile Include="../HubLog.cs" />
     <Compile Include="../HubVersion.cs" />
     <Compile Include="../LoopbackServer.cs" />

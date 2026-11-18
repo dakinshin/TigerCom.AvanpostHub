@@ -148,6 +148,12 @@ namespace AvanpostHub
         public bool CalibrationAvailable { get; set; }
         public long CalibrationGeneratedAtMs { get; set; }
         public int Connectors { get; set; }
+        public long NotificationsSent { get; set; }
+        public long NotificationsFailed { get; set; }
+        public long NotificationsQueued { get; set; }
+        public bool NotificationsEnabled { get; set; }
+        public bool NotificationsConfigured { get; set; }
+        public string NotificationLastError { get; set; }
         public string LastError { get; set; }
     }
 

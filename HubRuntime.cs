@@ -18,7 +18,8 @@ namespace AvanpostHub
             Calibration = new OiFlowCalibrationStore();
             CalibrationClient = new ScreenerCalibrationClient();
             ScreenerHistory = new ScreenerOiHistoryClient();
-            Server = new LoopbackServer(Features, ScreenerHistory, Storage, Calibration);
+            Notifications = new NotificationService();
+            Server = new LoopbackServer(Features, ScreenerHistory, Storage, Calibration, Notifications);
             MarketData = new MarketDataCoordinator(Features);
             Features.SnapshotPublished += OnSnapshotPublished;
             Server.SubscriptionActivated += MarketData.Activate;
@@ -33,6 +34,7 @@ namespace AvanpostHub
         public ScreenerOiHistoryClient ScreenerHistory { get; }
         public OiFlowCalibrationStore Calibration { get; }
         public ScreenerCalibrationClient CalibrationClient { get; }
+        public NotificationService Notifications { get; }
         public LoopbackServer Server { get; }
         public MarketDataCoordinator MarketData { get; }
         public HubSettings Settings => _settings;
@@ -41,6 +43,7 @@ namespace AvanpostHub
         {
             _settings = (settings ?? new HubSettings()).Sanitized();
             ScreenerHistory.Configure(_settings.ScreenerBaseUrl);
+            Notifications.Configure(_settings.Notifications);
             try
             {
                 Server.Stop();
@@ -77,6 +80,11 @@ namespace AvanpostHub
             Server.Stop();
         }
 
+        public void ConfigureNotifications(NotificationSettings settings)
+        {
+            Notifications.Configure(settings);
+        }
+
         private void ScheduleCalibrationRefresh(string baseUrl)
         {
             var previous = _calibrationCts;
@@ -103,6 +111,7 @@ namespace AvanpostHub
             try { _calibrationCts?.Cancel(); } catch { }
             try { _calibrationCts?.Dispose(); } catch { }
             Server.Dispose();
+            Notifications.Dispose();
             MarketData.Dispose();
             ScreenerHistory.Dispose();
             CalibrationClient.Dispose();

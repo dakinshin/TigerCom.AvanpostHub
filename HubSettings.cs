@@ -10,6 +10,7 @@ namespace AvanpostHub
         public string ScreenerBaseUrl { get; set; } = "https://avanpost.io";
         public bool Autostart { get; set; }
         public bool StartMinimized { get; set; } = true;
+        public NotificationSettings Notifications { get; set; } = new NotificationSettings();
 
         public HubSettings Sanitized()
         {
@@ -17,6 +18,7 @@ namespace AvanpostHub
             if (s.Port < 1 || s.Port > 65535) s.Port = 7830;
             s.ScreenerBaseUrl = (s.ScreenerBaseUrl ?? "").Trim().TrimEnd('/');
             if (s.ScreenerBaseUrl.Length == 0) s.ScreenerBaseUrl = "https://avanpost.io";
+            s.Notifications = (s.Notifications ?? new NotificationSettings()).Sanitized();
             return s;
         }
 
@@ -28,6 +30,7 @@ namespace AvanpostHub
                 ScreenerBaseUrl = ScreenerBaseUrl,
                 Autostart = Autostart,
                 StartMinimized = StartMinimized,
+                Notifications = Notifications == null ? new NotificationSettings() : Notifications.Clone(),
             };
         }
     }

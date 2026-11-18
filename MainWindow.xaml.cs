@@ -61,6 +61,17 @@ namespace AvanpostHub
                 ? "OiFlow · " + DateTimeOffset.FromUnixTimeMilliseconds(status.CalibrationGeneratedAtMs)
                     .ToLocalTime().ToString("yyyy-MM-dd HH:mm")
                 : "профиль OiFlow не загружен";
+            if (!status.NotificationsEnabled)
+                NotificationsText.Text = "ntfy выключен";
+            else if (!status.NotificationsConfigured)
+                NotificationsText.Text = "нужны адрес ntfy и топик";
+            else
+                NotificationsText.Text = "отправлено " + status.NotificationsSent +
+                                         " · в очереди " + status.NotificationsQueued +
+                                         " · ошибок " + status.NotificationsFailed +
+                                         (string.IsNullOrWhiteSpace(status.NotificationLastError)
+                                             ? ""
+                                             : " · " + status.NotificationLastError);
             ErrorText.Text = string.IsNullOrWhiteSpace(status.LastError)
                 ? "Хаб слушает 127.0.0.1. Binance Spot/USD-M подключается по подписке индикатора."
                 : status.LastError;
@@ -82,6 +93,7 @@ namespace AvanpostHub
                 ScreenerBaseUrl = ScreenerUrlBox.Text.Trim(),
                 Autostart = AutostartCheck.IsChecked == true,
                 StartMinimized = StartMinimizedCheck.IsChecked == true,
+                Notifications = _app.Settings.Notifications.Clone(),
             };
 
             var error = _app.ApplySettings(next);
@@ -99,6 +111,13 @@ namespace AvanpostHub
             var error = _runtime.Restart(_app.Settings);
             if (!string.IsNullOrWhiteSpace(error))
                 MessageBox.Show(error, "Avanpost Hub", MessageBoxButton.OK, MessageBoxImage.Warning);
+            UpdateStatus();
+        }
+
+        private void Notifications_Click(object sender, RoutedEventArgs e)
+        {
+            var window = new NotificationsWindow(_app, _runtime) { Owner = this };
+            window.ShowDialog();
             UpdateStatus();
         }
 
